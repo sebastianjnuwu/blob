@@ -19,6 +19,7 @@
     "#functions/*": "./src/functions/*.js"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "bullmq": "^5.70.3",
     "busboy": "^1.6.0",

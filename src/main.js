@@ -6,6 +6,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "#functions/logger";
+import "#db/redis"
 import "dotenv/config";
 
 const app = express();
