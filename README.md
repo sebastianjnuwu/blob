@@ -1,10 +1,14 @@
-# Blob API
+# API Blob
 
-| Método | Rota | Autenticação | Descrição |
-|--------|------|-------------|-----------|
-| POST   | /blob                | Admin Token | Upload  |
-| GET    | /blob                | Admin Token | Lista blobs com filtros (prefixo/delimiter) |
-| GET    | /blob/:id            | Público     | Download do blob (byte-range) |
-| HEAD   | /blob/:id            | Público     | Metadados do blob |
-| DELETE | /blob/:id            | Admin Token | Remove blob |
-| GET    | /health              | Público     | Healthcheck |
+| Método | Rota | Privado | Descrição |
+|--------|------|---------|-----------|
+| `POST` | `/blob` |  `true` | Upload simples |
+| `POST` | `/blob/multipart` |  `true` | Inicia upload multipart |
+| `PUT` | `/blob/:id/part` |  `true` | Upload de parte |
+| `POST` | `/blob/:id/complete` |  `true` | Finaliza multipart |
+| `GET` | `/blob` |  `true` | Listar blobs |
+| `GET` | `/blob/:id` |  `false` | Download |
+| `HEAD` | `/blob/:id` |  `false` | Metadados |
+| `DELETE` | `/blob/:id` |  `true` | Deletar |
+| `GET` | `/health` |  `false` | Healthcheck |
+| `GET` | `/` |  `false` | Hello, World |
