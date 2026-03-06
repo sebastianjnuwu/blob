@@ -1,10 +1,11 @@
 # blob.cabrapi.com.br
 
-Servico HTTP para upload, listagem e download de arquivos com:
+Servico HTTP para upload, listagem, visualizacao e remocao de arquivos com:
 
 - metadados em SQLite (`Prisma`)
 - arquivos em disco local (`data/blob-storage`)
 - URL assinada para blobs privados
+- limite de taxa para rotas sensiveis
 
 ## Requisitos
 
@@ -36,12 +37,22 @@ DOWNLOAD_RATE_LIMIT_WINDOW_MS=60000
 # CORS_ORIGINS=https://app.example.com
 ```
 
-## Executar Local
+## Executar Local (Passo a Passo)
 
 ```bash
 npm install
 npm run db:prepare
 npm run dev
+```
+
+API local:
+
+- `http://127.0.0.1:3000`
+
+Healthcheck rapido:
+
+```bash
+curl http://127.0.0.1:3000/health
 ```
 
 ## Docker (volume em `data/`)
@@ -57,11 +68,11 @@ Persistencia:
 
 ## Endpoints
 
-Base URL: `http://localhost:3000`
+Base URL: `http://127.0.0.1:3000`
 
 - `GET /health`
 - `POST /blob/upload`
-- `GET /blob?page=1&pageSize=20&bucket=docs`
+- `GET /blob?page=1&pageSize=20&bucket=docs&public=true`
 - `GET /blob/:id/sign?ttl=120`
 - `GET /blob/:id?exp=<exp>&n=<nonce>&sig=<sig>`
 - `DELETE /blob/:id`
@@ -76,10 +87,49 @@ Base URL: `http://localhost:3000`
 - `public` (opcional: `true|false`)
 - `metadata` (opcional: JSON string)
 
-### Download Privado
+Exemplo com `curl`:
+
+```bash
+curl -X POST "http://127.0.0.1:3000/blob/upload" \
+	-F "file=@./arquivo.pdf" \
+	-F "bucket=docs" \
+	-F "key=contratos/arquivo.pdf" \
+	-F "public=false" \
+	-F 'metadata={"origem":"manual"}'
+```
+
+### Visualizar Blob Publico
+
+```bash
+curl -L "http://127.0.0.1:3000/blob/<id>" --output arquivo.bin
+```
+
+### Download Privado (URL Assinada)
 
 1. Chame `GET /blob/:id/sign?ttl=120`
 2. Use a `url` retornada para baixar o arquivo
+
+Exemplo:
+
+```bash
+curl "http://127.0.0.1:3000/blob/<id>/sign?ttl=120"
+curl -L "http://127.0.0.1:3000/blob/<id>?exp=<exp>&n=<nonce>&sig=<sig>" --output arquivo.bin
+```
+
+### Listagem
+
+```bash
+curl "http://127.0.0.1:3000/blob?page=1&pageSize=10"
+curl "http://127.0.0.1:3000/blob?page=1&pageSize=10&bucket=docs"
+curl "http://127.0.0.1:3000/blob?page=1&pageSize=10&public=true"
+curl "http://127.0.0.1:3000/blob?page=1&pageSize=10&public=false"
+```
+
+### Remocao
+
+```bash
+curl -X DELETE "http://127.0.0.1:3000/blob/<id>"
+```
 
 ## Seguranca
 
@@ -87,6 +137,14 @@ Base URL: `http://localhost:3000`
 - validacao de `bucket`/`key` e bloqueio de path traversal
 - rate limit por IP nas rotas privadas
 - headers `x-ratelimit-remaining` e `x-ratelimit-reset`
+
+## Tester HTML
+
+Existe um tester manual em:
+
+- `api-tester.html`
+
+Abra no navegador e configure a base URL (`http://127.0.0.1:3000`).
 
 ## Scripts
 
@@ -99,3 +157,12 @@ npm run db:prepare
 npm run typecheck
 npm run check
 ```
+
+## Troubleshooting
+
+- Erro de schema/DB:
+	- execute `npm run db:prepare`.
+- Erro de assinatura em blob privado:
+	- gere novamente via `/blob/:id/sign` e use os parametros `exp`, `n`, `sig` sem alteracao.
+- Upload rejeitado por MIME:
+	- ajuste `ALLOWED_MIME_TYPES` no `.env` ou remova a variavel para aceitar qualquer MIME.

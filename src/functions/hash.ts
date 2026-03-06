@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 
 /**
- * Computes a stable content fingerprint.
+ * Computes a stable content fingerprint for deduplication.
+ *
+ * Uses `blake2b512` when available and falls back to `sha512`
+ * to keep compatibility across different OpenSSL builds.
  */
 export function hashContent(buffer: Buffer): string {
   try {
@@ -9,11 +12,4 @@ export function hashContent(buffer: Buffer): string {
   } catch {
     return crypto.createHash("sha512").update(buffer).digest("hex");
   }
-}
-
-/**
- * Backward-compatible alias for content hashing.
- */
-export function sha256(buffer: Buffer): string {
-  return hashContent(buffer);
 }

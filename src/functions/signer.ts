@@ -20,10 +20,15 @@ const SIGNING_VERSION = "v1";
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{20,64}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{40,256}$/;
 
+/**
+ * Reads and validates the signing secret from environment.
+ *
+ * In development, a local fallback avoids setup friction.
+ * In production, `TOKEN_SECRET` is mandatory and must be strong.
+ */
 function getSecret(): string {
   const secret =
     process.env.TOKEN_SECRET ||
-    process.env.SECRET ||
     (process.env.NODE_ENV === "production"
       ? undefined
       : "local-dev-token-secret");
@@ -46,14 +51,17 @@ function buildPayload({ method, id, exp, nonce }: SignInput): string {
 }
 
 /**
- * Generates a URL-safe nonce for one-time signed URL payloads.
+ * Generates a URL-safe nonce for signed URL payloads.
  */
 export function createNonce(): string {
   return crypto.randomBytes(18).toString("base64url");
 }
 
 /**
- * Builds an URL-safe signature bound to method, id, expiry and nonce.
+ * Builds a URL-safe HMAC signature bound to method, id, expiry and nonce.
+ *
+ * @param params Signature payload fields.
+ * @returns URL-safe base64 signature string.
  */
 export function sign({ id, exp, nonce, method = "GET" }: SignInput): string {
   const payload = buildPayload({ method, id, exp, nonce });
@@ -65,7 +73,10 @@ export function sign({ id, exp, nonce, method = "GET" }: SignInput): string {
 }
 
 /**
- * Validates signature structure, expiration and timing-safe signature value.
+ * Validates signature structure, expiration and timing-safe value match.
+ *
+ * @param params Signature verification payload.
+ * @returns `true` when signature is valid and non-expired.
  */
 export function verifySignature({
   id,

@@ -8,13 +8,10 @@ import express, {
 import helmet from "helmet";
 import morgan from "morgan";
 import { v7 as uuidv7 } from "uuid";
+import type { HttpError } from "#functions/httpError";
 import { logger } from "#functions/logger";
 import blobRouter from "#routes/blob.routes";
 import "dotenv/config";
-
-type HttpError = Error & {
-  statusCode?: number;
-};
 
 const app = express();
 

@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
+import { createHttpError } from "#functions/httpError";
 import type { RateLimitResult } from "#functions/rateLimit";
 import { consumeRateLimit } from "#functions/rateLimit";
 import { createNonce, sign, verifySignature } from "#functions/signer";
-import type { BlobResponse } from "#services/blob.service";
 import {
   deleteBlobById,
   findBlobById,
@@ -15,10 +15,10 @@ import {
 } from "#services/blob.service";
 
 // Controller layer: HTTP concerns only (input parsing, rate limits, status codes).
-function asJsonSafeBlob(blob: BlobResponse): BlobResponse {
-  return blob;
-}
 
+/**
+ * Parses a positive integer from env with fallback.
+ */
 function getEnvInt(name: string, fallback: number): number {
   const parsed = Number(process.env[name] ?? fallback);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -51,6 +51,9 @@ function setRateLimitHeaders(res: Response, rateLimit: RateLimitResult): void {
   );
 }
 
+/**
+ * Converts common truthy/falsy payloads to boolean.
+ */
 function parseBoolean(value: unknown, fallback = false): boolean {
   if (value === undefined) {
     return fallback;
@@ -68,7 +71,43 @@ function parseBoolean(value: unknown, fallback = false): boolean {
 }
 
 /**
+ * Parses optional boolean query params (`true|false`).
+ *
+ * @throws {HttpError} When query value is present but invalid.
+ */
+function parseOptionalBooleanQuery(value: unknown): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    throw createHttpError("Invalid boolean query value", 400);
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+
+  throw createHttpError("Invalid boolean query value. Use true or false", 400);
+}
+
+/**
  * Handles multipart upload and persists blob metadata/content.
+ *
+ * Expected payload (`multipart/form-data`):
+ * - `file` (required)
+ * - `bucket` (optional)
+ * - `key` (optional)
+ * - `public` (optional, `true|false`)
+ * - `metadata` (optional, JSON string)
  */
 export async function uploadBlob(
   req: Request,
@@ -88,7 +127,7 @@ export async function uploadBlob(
       metadata: req.body.metadata,
     });
 
-    res.status(201).json(asJsonSafeBlob(blob));
+    res.status(201).json(blob);
     return;
   } catch (error) {
     next(error);
@@ -98,6 +137,12 @@ export async function uploadBlob(
 
 /**
  * Returns paginated blob metadata list.
+ *
+ * Query params:
+ * - `page` (default: 1)
+ * - `pageSize` (default: 20, max: 100)
+ * - `bucket` (optional)
+ * - `public` (optional, `true|false`)
  */
 export async function listBlobs(
   req: Request,
@@ -109,18 +154,20 @@ export async function listBlobs(
     const pageSize = Number(req.query.pageSize ?? 20);
     const bucket =
       typeof req.query.bucket === "string" ? req.query.bucket : undefined;
+    const isPublic = parseOptionalBooleanQuery(req.query.public);
 
     const { data, total } = await listBlobItems({
       page,
       pageSize,
       bucket,
+      isPublic,
     });
 
     res.json({
       page,
       pageSize,
       total,
-      items: data.map(asJsonSafeBlob),
+      items: data,
     });
     return;
   } catch (error) {
@@ -131,6 +178,8 @@ export async function listBlobs(
 
 /**
  * Streams a blob file if access conditions are satisfied.
+ *
+ * Private blobs require querystring signature fields: `exp`, `n`, `sig`.
  */
 export async function getBlob(
   req: Request,
@@ -234,6 +283,9 @@ export async function destroyBlob(
 
 /**
  * Issues a signed URL payload for private blob download.
+ *
+ * Query params:
+ * - `ttl` in seconds, clamped by environment min/max bounds.
  */
 export async function getBlobSignedUrl(
   req: Request,

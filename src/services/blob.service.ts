@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Blob as PrismaBlob } from "@prisma/client";
 import prisma from "#db/prisma";
 import { hashContent } from "#functions/hash";
+import { createHttpError } from "#functions/httpError";
 import { buildStoragePath } from "#functions/storagePath";
 
 export type BlobResponse = Omit<PrismaBlob, "metadata"> & {
@@ -21,6 +22,7 @@ type ListBlobParams = {
   page?: number;
   pageSize?: number;
   bucket?: string;
+  isPublic?: boolean;
 };
 
 const BUCKET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}$/;
@@ -35,39 +37,52 @@ const storageBaseAbsolutePath = path.resolve(
   getStorageBasePath(),
 );
 
-function asHttpError(
-  message: string,
-  statusCode: number,
-): Error & { statusCode: number } {
-  const error = new Error(message) as Error & { statusCode: number };
-  error.statusCode = statusCode;
-  return error;
-}
-
+/**
+ * Validates and normalizes bucket input.
+ *
+ * @param value Raw bucket name.
+ * @returns Normalized bucket.
+ * @throws {HttpError} When bucket format is invalid.
+ */
 function normalizeBucket(value?: string): string {
   const bucket = (value || "default").trim();
 
   if (!BUCKET_PATTERN.test(bucket)) {
-    throw asHttpError("Invalid bucket name", 400);
+    throw createHttpError("Invalid bucket name", 400);
   }
 
   return bucket;
 }
 
+/**
+ * Validates and normalizes object key.
+ *
+ * @param value Requested object key.
+ * @param originalname Original uploaded filename.
+ * @returns Sanitized key.
+ * @throws {HttpError} When key is empty or unsafe.
+ */
 function normalizeKey(value: string | undefined, originalname: string): string {
   const key = (value || originalname).trim();
 
   if (!key) {
-    throw asHttpError("Missing file key", 400);
+    throw createHttpError("Missing file key", 400);
   }
 
   if (key.includes("..") || path.isAbsolute(key) || key.includes("\\")) {
-    throw asHttpError("Invalid file key", 400);
+    throw createHttpError("Invalid file key", 400);
   }
 
   return key;
 }
 
+/**
+ * Parses metadata payload from multipart field.
+ *
+ * @param value Metadata field as string/object/undefined.
+ * @returns Parsed metadata object or `null`.
+ * @throws {HttpError} When metadata is not valid JSON object.
+ */
 function parseMetadata(value: unknown): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -81,13 +96,19 @@ function parseMetadata(value: unknown): Record<string, unknown> | null {
     try {
       return JSON.parse(value) as Record<string, unknown>;
     } catch {
-      throw asHttpError("metadata must be a valid JSON object", 400);
+      throw createHttpError("metadata must be a valid JSON object", 400);
     }
   }
 
-  throw asHttpError("metadata must be a valid JSON object", 400);
+  throw createHttpError("metadata must be a valid JSON object", 400);
 }
 
+/**
+ * Enforces MIME allow-list when configured.
+ *
+ * @param mime Uploaded MIME type.
+ * @throws {HttpError} When MIME is disallowed.
+ */
 function ensureAllowedMime(mime: string): void {
   const allowedMimes = process.env.ALLOWED_MIME_TYPES?.split(",")
     .map((item) => item.trim())
@@ -98,8 +119,19 @@ function ensureAllowedMime(mime: string): void {
   }
 
   if (!allowedMimes.includes(mime)) {
-    throw asHttpError("MIME type not allowed", 415);
+    throw createHttpError("MIME type not allowed", 415);
   }
+}
+
+/**
+ * Writes the binary object file to storage path.
+ */
+async function persistObjectFile(
+  absolutePath: string,
+  buffer: Buffer,
+): Promise<void> {
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, buffer, { flag: "w" });
 }
 
 function createBlobRecord(
@@ -141,12 +173,25 @@ function deserializeBlob(blob: PrismaBlob): BlobResponse {
   };
 }
 
+/**
+ * Stores a blob file and metadata.
+ *
+ * Behavior:
+ * - Rejects invalid payload/MIME.
+ * - Deduplicates by content hash.
+ * - Self-heals missing object file when metadata already exists.
+ *
+ * @param file Parsed multer file payload.
+ * @param options Optional upload fields.
+ * @returns Persisted blob response.
+ * @throws {HttpError} For validation errors.
+ */
 export async function saveBlob(
   file: Express.Multer.File,
   options: SaveBlobOptions = {},
 ): Promise<BlobResponse> {
   if (!file?.buffer) {
-    throw asHttpError("Invalid upload payload", 400);
+    throw createHttpError("Invalid upload payload", 400);
   }
 
   ensureAllowedMime(file.mimetype);
@@ -165,15 +210,13 @@ export async function saveBlob(
   if (existingActive) {
     // Self-heal file if metadata exists but object file is missing.
     await fs.access(absolutePath).catch(async () => {
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      await fs.writeFile(absolutePath, file.buffer, { flag: "w" });
+      await persistObjectFile(absolutePath, file.buffer);
     });
 
     return deserializeBlob(existingActive);
   }
 
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  await fs.writeFile(absolutePath, file.buffer, { flag: "w" });
+  await persistObjectFile(absolutePath, file.buffer);
 
   const metadata = parseMetadata(options.metadata);
   const record = createBlobRecord(
@@ -234,6 +277,7 @@ export async function listBlobItems({
   page = 1,
   pageSize = 20,
   bucket,
+  isPublic,
 }: ListBlobParams = {}): Promise<{ data: BlobResponse[]; total: number }> {
   const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
   const safePageSize =
@@ -243,6 +287,7 @@ export async function listBlobItems({
   const where = {
     deletedAt: null,
     ...(filterBucket ? { bucket: filterBucket } : {}),
+    ...(isPublic === undefined ? {} : { public: isPublic }),
   };
 
   const [data, total] = await Promise.all([
@@ -328,7 +373,7 @@ export function resolveBlobAbsolutePath(blobPath: string): string {
     path.isAbsolute(relativeToStorage)
   ) {
     // Hard fail if DB path points outside storage root.
-    throw asHttpError("Invalid blob path", 400);
+    throw createHttpError("Invalid blob path", 400);
   }
 
   return absolutePath;
