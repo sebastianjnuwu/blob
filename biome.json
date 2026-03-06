@@ -13,12 +13,14 @@
   "files": {
     "includes": [
       "**",
+      "**/*.ts",
       "!node_modules",
       "!dist",
       "!build",
       "!.astro",
       "!out",
-      "!coverage"
+      "!coverage",
+      "!**/*.d.ts"
     ]
   }
 }

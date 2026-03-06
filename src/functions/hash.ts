@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 
-export function hashContent(buffer) {
+/**
+ * Computes a stable content fingerprint.
+ */
+export function hashContent(buffer: Buffer): string {
   try {
     return crypto.createHash("blake2b512").update(buffer).digest("hex");
   } catch {
@@ -8,6 +11,6 @@ export function hashContent(buffer) {
   }
 }
 
-export function sha256(buffer) {
+export function sha256(buffer: Buffer): string {
   return hashContent(buffer);
 }

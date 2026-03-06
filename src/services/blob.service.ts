@@ -1,19 +1,50 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { Blob as PrismaBlob } from "@prisma/client";
 import prisma from "#db/prisma";
 import { hashContent } from "#functions/hash";
 import { buildStoragePath } from "#functions/storagePath";
 
+export type BlobResponse = Omit<PrismaBlob, "metadata"> & {
+  metadata: Record<string, unknown> | null;
+};
+
+type SaveBlobOptions = {
+  bucket?: string;
+  key?: string;
+  isPublic?: boolean;
+  metadata?: unknown;
+};
+
+type ListBlobParams = {
+  page?: number;
+  pageSize?: number;
+  bucket?: string;
+};
+
 const BUCKET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}$/;
 
-function asHttpError(message, statusCode) {
-  const error = new Error(message);
+// Service layer: persistence + filesystem operations.
+function getStorageBasePath(): string {
+  return process.env.STORAGE_PATH || "data/blob-storage";
+}
+
+const storageBaseAbsolutePath = path.resolve(
+  process.cwd(),
+  getStorageBasePath(),
+);
+
+function asHttpError(
+  message: string,
+  statusCode: number,
+): Error & { statusCode: number } {
+  const error = new Error(message) as Error & { statusCode: number };
   error.statusCode = statusCode;
   return error;
 }
 
-function normalizeBucket(value) {
+function normalizeBucket(value?: string): string {
   const bucket = (value || "default").trim();
 
   if (!BUCKET_PATTERN.test(bucket)) {
@@ -23,7 +54,7 @@ function normalizeBucket(value) {
   return bucket;
 }
 
-function normalizeKey(value, originalname) {
+function normalizeKey(value: string | undefined, originalname: string): string {
   const key = (value || originalname).trim();
 
   if (!key) {
@@ -37,18 +68,18 @@ function normalizeKey(value, originalname) {
   return key;
 }
 
-function parseMetadata(value) {
+function parseMetadata(value: unknown): Record<string, unknown> | null {
   if (!value) {
     return null;
   }
 
   if (typeof value === "object") {
-    return value;
+    return value as Record<string, unknown>;
   }
 
   if (typeof value === "string") {
     try {
-      return JSON.parse(value);
+      return JSON.parse(value) as Record<string, unknown>;
     } catch {
       throw asHttpError("metadata must be a valid JSON object", 400);
     }
@@ -57,7 +88,7 @@ function parseMetadata(value) {
   throw asHttpError("metadata must be a valid JSON object", 400);
 }
 
-function ensureAllowedMime(mime) {
+function ensureAllowedMime(mime: string): void {
   const allowedMimes = process.env.ALLOWED_MIME_TYPES?.split(",")
     .map((item) => item.trim())
     .filter(Boolean);
@@ -71,7 +102,12 @@ function ensureAllowedMime(mime) {
   }
 }
 
-function createBlobRecord(file, options, hash, relativePath) {
+function createBlobRecord(
+  file: Express.Multer.File,
+  options: SaveBlobOptions,
+  hash: string,
+  relativePath: string,
+): Omit<PrismaBlob, "createdAt" | "updatedAt" | "deletedAt" | "downloads"> {
   return {
     id: crypto.randomUUID(),
     bucket: normalizeBucket(options.bucket),
@@ -83,16 +119,17 @@ function createBlobRecord(file, options, hash, relativePath) {
     path: relativePath,
     public: Boolean(options.isPublic),
     version: 1,
-    metadata: options.metadata,
+    metadata: (options.metadata as string | null) ?? null,
   };
 }
 
-function deserializeBlob(blob) {
-  let parsedMetadata = null;
+// SQLite keeps metadata as string; API returns parsed object.
+function deserializeBlob(blob: PrismaBlob): BlobResponse {
+  let parsedMetadata: Record<string, unknown> | null = null;
 
   if (blob.metadata) {
     try {
-      parsedMetadata = JSON.parse(blob.metadata);
+      parsedMetadata = JSON.parse(blob.metadata) as Record<string, unknown>;
     } catch {
       parsedMetadata = null;
     }
@@ -104,7 +141,10 @@ function deserializeBlob(blob) {
   };
 }
 
-export async function saveBlob(file, options = {}) {
+export async function saveBlob(
+  file: Express.Multer.File,
+  options: SaveBlobOptions = {},
+): Promise<BlobResponse> {
   if (!file?.buffer) {
     throw asHttpError("Invalid upload payload", 400);
   }
@@ -123,6 +163,7 @@ export async function saveBlob(file, options = {}) {
   });
 
   if (existingActive) {
+    // Self-heal file if metadata exists but object file is missing.
     await fs.access(absolutePath).catch(async () => {
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, file.buffer, { flag: "w" });
@@ -149,7 +190,9 @@ export async function saveBlob(file, options = {}) {
 
     return deserializeBlob(created);
   } catch (error) {
-    if (error?.code === "P2002") {
+    const prismaError = error as { code?: string };
+
+    if (prismaError?.code === "P2002") {
       const duplicated = await prisma.blob.findFirst({
         where: {
           hash,
@@ -166,7 +209,10 @@ export async function saveBlob(file, options = {}) {
   }
 }
 
-export async function findBlobById(id) {
+/**
+ * Finds an active blob by ID.
+ */
+export async function findBlobById(id: string): Promise<BlobResponse | null> {
   if (!id) {
     return null;
   }
@@ -181,7 +227,14 @@ export async function findBlobById(id) {
   return blob ? deserializeBlob(blob) : null;
 }
 
-export async function listBlobItems({ page = 1, pageSize = 20, bucket } = {}) {
+/**
+ * Returns paginated blob metadata.
+ */
+export async function listBlobItems({
+  page = 1,
+  pageSize = 20,
+  bucket,
+}: ListBlobParams = {}): Promise<{ data: BlobResponse[]; total: number }> {
   const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
   const safePageSize =
     Number.isNaN(pageSize) || pageSize < 1 ? 20 : Math.min(pageSize, 100);
@@ -210,7 +263,10 @@ export async function listBlobItems({ page = 1, pageSize = 20, bucket } = {}) {
   };
 }
 
-export async function deleteBlobById(id) {
+/**
+ * Soft-deletes a blob and attempts to remove its file.
+ */
+export async function deleteBlobById(id: string): Promise<BlobResponse | null> {
   const item = await prisma.blob.findFirst({
     where: {
       id,
@@ -237,7 +293,10 @@ export async function deleteBlobById(id) {
   return deserializeBlob(item);
 }
 
-export async function incrementBlobDownloadCount(id) {
+/**
+ * Increments download counter for observability.
+ */
+export async function incrementBlobDownloadCount(id: string): Promise<void> {
   if (!id) {
     return;
   }
@@ -252,4 +311,25 @@ export async function incrementBlobDownloadCount(id) {
       },
     },
   });
+}
+
+/**
+ * Resolves a blob path and guarantees it is inside storage root.
+ */
+export function resolveBlobAbsolutePath(blobPath: string): string {
+  const absolutePath = path.resolve(process.cwd(), blobPath);
+  const relativeToStorage = path.relative(
+    storageBaseAbsolutePath,
+    absolutePath,
+  );
+
+  if (
+    relativeToStorage.startsWith("..") ||
+    path.isAbsolute(relativeToStorage)
+  ) {
+    // Hard fail if DB path points outside storage root.
+    throw asHttpError("Invalid blob path", 400);
+  }
+
+  return absolutePath;
 }

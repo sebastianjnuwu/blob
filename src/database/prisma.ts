@@ -9,7 +9,7 @@ const databaseUrl = process.env.DATABASE_URL?.startsWith("file:")
   ? process.env.DATABASE_URL
   : "file:./data/blob.db";
 
-async function ensureSqliteDirectory() {
+async function ensureSqliteDirectory(): Promise<void> {
   if (!databaseUrl.startsWith("file:")) {
     return;
   }
@@ -36,17 +36,14 @@ const prisma = new PrismaClient({
 (async () => {
   await prisma.$queryRaw`SELECT 1`
     .then(() => {
-      return logger.debug(`Prisma connected to SQLite (${databaseUrl})`, {
+      logger.debug(`Prisma connected to SQLite (${databaseUrl})`, {
         type: "database",
       });
     })
-    .catch((err) => {
-      return logger.error(
-        `Prisma not connected to the database: ${err.message}`,
-        {
-          type: "database",
-        },
-      );
+    .catch((err: Error) => {
+      logger.error(`Prisma not connected to the database: ${err.message}`, {
+        type: "database",
+      });
     });
 })();
 

@@ -1,12 +1,20 @@
 import compression from "compression";
 import cors from "cors";
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "#functions/logger";
 import blobRouter from "#routes/blob.routes";
 import "dotenv/config";
+
+type HttpError = Error & {
+  statusCode?: number;
+};
 
 const app = express();
 
@@ -55,49 +63,59 @@ app.use(
   }),
 );
 
-app.use((req, res, next) => {
-  const requestId = req.headers["x-request-id"] || uuidv7();
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestIdHeader = req.headers["x-request-id"];
+  const requestId =
+    typeof requestIdHeader === "string" && requestIdHeader.length > 0
+      ? requestIdHeader
+      : uuidv7();
+
   req.requestId = requestId;
   res.setHeader("x-request-id", requestId);
   next();
 });
 
-morgan.token("id", (req) => req.requestId);
+morgan.token("id", (req: Request) => req.requestId || "unknown");
 
 app.use(
   morgan(
     "(ID: :id) - " +
       ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" (:response-time ms)',
     {
-      stream: { write: (x) => logger.info(x.trim(), { type: "http" }) },
+      stream: { write: (x: string) => logger.info(x.trim(), { type: "http" }) },
     },
   ),
 );
 
 app.use("/blob", blobRouter);
 
-app.get("/", (_, res) => {
-  return res.send("OK");
+app.get("/", (_: Request, res: Response) => {
+  res.send("OK");
 });
 
-app.get("/health", (_, res) => {
-  return res.send("OK");
+app.get("/health", (_: Request, res: Response) => {
+  res.send("OK");
 });
 
-app.use((_, res) => {
-  return res.status(404).json({ error: "Route not found" });
+app.use((_: Request, res: Response) => {
+  res.status(404).json({ error: "Route not found" });
 });
 
-app.use((error, req, res, _) => {
-  logger.error(`Unhandled error (${req.requestId}): ${error.message}`);
-  return res.status(error.statusCode ?? 500).json({
-    error: error.message ?? "Internal server error",
-    requestId: req.requestId,
-  });
-});
+app.use(
+  (error: HttpError, req: Request, res: Response, _next: NextFunction) => {
+    logger.error(
+      `Unhandled error (${req.requestId || "unknown"}): ${error.message}`,
+    );
+    res.status(error.statusCode ?? 500).json({
+      error: error.message ?? "Internal server error",
+      requestId: req.requestId,
+    });
+  },
+);
 
-app.listen(process.env.PORT ?? 3000, process.env.HOST ?? "0.0.0.0", () => {
-  return logger.debug(
-    `Server running: <green>http://${process.env.HOST ?? "0.0.0.0"}:${process.env.PORT ?? 3000}</green>`,
-  );
+const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST ?? "0.0.0.0";
+
+app.listen(port, host, () => {
+  logger.debug(`Server running: <green>http://${host}:${port}</green>`);
 });
