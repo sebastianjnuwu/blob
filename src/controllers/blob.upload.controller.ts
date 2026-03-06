@@ -91,7 +91,10 @@ export async function uploadBlob(
             metadata: parsed.data.metadata,
             expiresAt,
         });
-        res.status(201).json(blob);
+        // Monta a URL de acesso ao blob
+        const baseUrl = req.protocol + '://' + req.get('host');
+        const url = `${baseUrl}/blob/${blob.id}`;
+        res.status(201).json({ ...blob, url });
         return;
     } catch (error) {
         next(error);
