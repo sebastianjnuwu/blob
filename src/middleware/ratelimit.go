@@ -1,73 +1,54 @@
 package middleware
 
 import (
+	"blob/src/database"
 	"encoding/json"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 )
+
+// Package middleware fornece middlewares HTTP para a aplicação.
+//
+// RateLimiter implementa um middleware de rate limit por IP usando Redis como backend.
+// O limite e a janela de tempo são configurados via variáveis de ambiente:
+//   - BLOB_RATE_LIMIT_MAX: número máximo de requisições por janela
+//   - BLOB_RATE_LIMIT_WINDOW_MS: duração da janela em milissegundos
+
+type RateLimiter struct {
+	max    int
+	window time.Duration
+}
 
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-type RateLimiter struct {
-	mu      sync.Mutex
-	clients map[string]*client
-	max     int
-	window  time.Duration
-}
-
-type client struct {
-	count     int
-	expiresAt time.Time
-}
-
 func NewRateLimiterFromEnv() *RateLimiter {
-	maxStr := os.Getenv("BLOB_RATE_LIMIT_MAX")
-	windowStr := os.Getenv("BLOB_RATE_LIMIT_WINDOW_MS")
-
-	max, _ := strconv.Atoi(maxStr)
-	windowMs, _ := strconv.Atoi(windowStr)
-
+	max, _ := strconv.Atoi(os.Getenv("BLOB_RATE_LIMIT_MAX"))
+	windowMs, _ := strconv.Atoi(os.Getenv("BLOB_RATE_LIMIT_WINDOW_MS"))
 	return &RateLimiter{
-		clients: make(map[string]*client),
-		max:     max,
-		window:  time.Duration(windowMs) * time.Millisecond,
+		max:    max,
+		window: time.Duration(windowMs) * time.Millisecond,
 	}
 }
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-
-		rl.mu.Lock()
-		c, exists := rl.clients[ip]
-
-		if !exists || time.Now().After(c.expiresAt) {
-			c = &client{
-				count:     0,
-				expiresAt: time.Now().Add(rl.window),
-			}
-			rl.clients[ip] = c
+		key := "ratelimit:" + ip
+		count, err := database.RedisClient.Incr(database.Ctx, key).Result()
+		if err == nil && count == 1 {
+			database.RedisClient.PExpire(database.Ctx, key, rl.window)
 		}
-
-		c.count++
-		if c.count > rl.max {
-			rl.mu.Unlock()
-
+		if err != nil || int(count) > rl.max {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(ErrorResponse{
-				Error: "rate limit exceeded",
-			})
+			json.NewEncoder(w).Encode(ErrorResponse{Error: "rate limit exceeded"})
 			return
 		}
-
-		rl.mu.Unlock()
 		next.ServeHTTP(w, r)
 	})
 }
