@@ -1,120 +1,115 @@
 
-# blob.cabrapi.com.br
 
-> Serviço HTTP para upload, listagem, visualização e remoção de arquivos (blobs), com autenticação opcional para arquivos privados.
+# Blob Storage API – caBRAPI
+
+API RESTful para armazenamento, listagem, download e remoção de arquivos (blobs), com controle de acesso, expiração opcional e URLs assinadas para acesso seguro.
 
 **Principais recursos:**
-- Metadados em SQLite (`Prisma`)
-- Arquivos em disco local (`data/blob-storage`)
-- URL assinada para blobs privados
-- Limite de taxa (rate limit) para rotas sensíveis
+- Metadados persistidos em SQLite via Prisma ORM
+- Armazenamento local em disco (`data/blob-storage`)
+- URLs assinadas (HMAC-SHA512) para blobs privados
+- Rate limiting configurável por rota
+- Upload seguro com validação de MIME
 
 ---
 
-## 🗂️ Tabela de Rotas
+## Visão Geral Técnica
 
-| Método | Rota                              | Pública | Admin Token | Descrição                                 |
-|--------|-----------------------------------|---------|-------------|-------------------------------------------|
-| GET    | `/health`                         | ✅      | -           | Healthcheck rápido                        |
-| POST   | `/blob/upload`                    | ❌      | ✅          | Upload de arquivo                         |
-| GET    | `/blob`                           | ✅      | (opcional)  | Lista blobs públicos (ou privados c/ token)|
-| GET    | `/blob/:id`                       | ✅      | (opcional)  | Download público ou privado (token/assinada)|
-| GET    | `/blob/:id/sign?ttl=120`          | ✅      | (opcional)  | Gera URL assinada para download privado   |
-| DELETE | `/blob/:id`                       | ❌      | ✅          | Remove blob                               |
+- **Stack:** Node.js 20+, Express, Prisma, Multer, Zod, JWT, Docker
+- **Persistência:** SQLite (padrão) ou PostgreSQL (ajustando `DATABASE_URL`)
+- **Segurança:** Token admin, URLs assinadas, rate limit, bloqueio path traversal
+- **Deploy:** Docker Compose ou Node.js puro
 
 ---
 
-## Requisitos
+---
+
+
+## Endpoints REST
+
+| Método | Endpoint                       | Auth           | Descrição                                      |
+|--------|-------------------------------|----------------|------------------------------------------------|
+| GET    | `/health`                     | -              | Healthcheck                                     |
+| POST   | `/blob/upload`                | Admin Token    | Upload de arquivo (multipart/form-data)         |
+| GET    | `/blob`                       | (opcional)     | Lista blobs públicos ou privados (admin)        |
+| GET    | `/blob/:id`                   | (opcional)     | Download público, privado (admin) ou via URL    |
+| GET    | `/blob/:id/sign?ttl=120`      | (opcional)     | Gera URL assinada para download privado         |
+| DELETE | `/blob/:id`                   | Admin Token    | Remove blob                                    |
+
+**Observações:**
+- Para uploads e operações protegidas, envie `x-admin-token: <TOKEN_SECRET>` ou `Authorization: Bearer <TOKEN_SECRET>`.
+- Blobs privados só podem ser baixados via URL assinada ou token admin.
+
+---
+
+---
+
+
+## Requisitos e Setup
 
 - Node.js 20+
 - npm
 - Docker (opcional)
 
-## Configuracao
 
-Use o arquivo de exemplo:
+## Variáveis de Ambiente
 
-```bash
-cp .env.example .env
-```
+Copie `.env.example` para `.env` e ajuste:
 
-No Windows (PowerShell):
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Ajuste obrigatoriamente:
-
-- `TOKEN_SECRET`
+- `TOKEN_SECRET` (obrigatório, segredo forte para autenticação admin)
+- `DATABASE_URL` (opcional, SQLite ou PostgreSQL)
+- `STORAGE_PATH` (opcional, caminho dos arquivos)
+- `ALLOWED_MIME_TYPES` (opcional, restringe tipos de arquivo)
+- `MAX_UPLOAD_SIZE_BYTES` (opcional, limite de upload)
 
 
-## 🔐 Autenticação & Acesso
 
-- **Token administrativo:**
-	- Use o valor de `TOKEN_SECRET` no header `x-admin-token` (ou `Authorization: Bearer ...`) para operações protegidas.
-	- Operações protegidas: upload, delete, listagem de blobs privados, download direto de blob privado.
-- **Acesso público:**
-	- Qualquer usuário pode listar e baixar blobs públicos sem autenticação.
-- **Acesso privado:**
-	- Blobs privados só podem ser baixados via URL assinada (válida por tempo limitado) ou diretamente pelo admin.
+## Autenticação & Controle de Acesso
+
+- **Admin:** Header `x-admin-token` ou `Authorization: Bearer <TOKEN_SECRET>`
+- **Público:** Listagem e download de blobs públicos sem autenticação
+- **Privado:** Download apenas via URL assinada (`/blob/:id/sign`) ou admin
 
 ---
 
-## Executar Local (Passo a Passo)
+
+## Execução Local
 
 ```bash
+cp .env.example .env
 npm install
 npm run db:prepare
 npm run dev
 ```
 
-API local:
+API: http://127.0.0.1:3000
 
-- `http://127.0.0.1:3000`
-
-Healthcheck rapido:
-
+Healthcheck:
 ```bash
 curl http://127.0.0.1:3000/health
 ```
 
-## Docker (volume em `data/`)
 
-Antes de subir o container, gere seu `.env`:
+## Docker
 
 ```bash
 cp .env.example .env
-```
-
-```bash
 docker compose up --build -d
 ```
 
-Verificar status e healthcheck:
-
-```bash
-docker compose ps
-docker compose logs -f blob
-```
-
-Persistencia:
-
-- `./data/blob.db`
-- `./data/blob-storage/...`
+Persistência:
+- Banco: `./data/blob.db`
+- Arquivos: `./data/blob-storage/`
 
 
-## 🚦 Exemplos de Uso
+
+## Exemplos de Uso (cURL)
 
 Base URL: `http://127.0.0.1:3000`
 
 
-### 📤 Upload de Arquivo (Privado ou Público)
 
-> **Nota:** Se você não informar o campo `expiresAt`, o arquivo ficará disponível para sempre (não expira), até ser removido manualmente.
-
-**Privado (requer token admin):**
-
+### Upload (privado)
 ```bash
 curl -X POST "http://127.0.0.1:3000/blob/upload" \
 	-H "x-admin-token: <TOKEN_SECRET>" \
@@ -122,9 +117,18 @@ curl -X POST "http://127.0.0.1:3000/blob/upload" \
 	-F "bucket=docs" \
 	-F "public=false"
 ```
+**Resposta:**
+```json
+{
+	"id": "...",
+	"filename": "arquivo.pdf",
+	"bucket": "docs",
+	"public": false,
+	"url": "http://127.0.0.1:3000/blob/<id>"
+}
+```
 
-**Público:**
-
+### Upload (público)
 ```bash
 curl -X POST "http://127.0.0.1:3000/blob/upload" \
 	-H "x-admin-token: <TOKEN_SECRET>" \
@@ -132,26 +136,12 @@ curl -X POST "http://127.0.0.1:3000/blob/upload" \
 	-F "public=true"
 ```
 
-**Com expiração (opcional):**
 
+### Listar blobs
 ```bash
-curl -X POST "http://127.0.0.1:3000/blob/upload" \
-	-H "x-admin-token: <TOKEN_SECRET>" \
-	-F "file=@./arquivo.pdf" \
-	-F "expiresAt=2026-12-31T23:59:59Z"
-```
-
-### 📄 Listar Blobs
-
-**Somente públicos:**
-
-```bash
+# Públicos
 curl "http://127.0.0.1:3000/blob?page=1&pageSize=5"
-```
-
-**Todos (inclui privados, requer token admin):**
-
-```bash
+# Todos (inclui privados)
 curl -H "x-admin-token: <TOKEN_SECRET>" "http://127.0.0.1:3000/blob?page=1&pageSize=5"
 ```
 
@@ -167,20 +157,16 @@ curl -H "x-admin-token: <TOKEN_SECRET>" "http://127.0.0.1:3000/blob?page=1&pageS
 
 ---
 
-### 📥 Download ou Visualização de Imagem
 
-**Visualizar imagem pública direto no navegador:**
-
-```
-http://127.0.0.1:3000/blob/<id>
-```
-
-Basta acessar a URL acima no navegador. O Content-Type será o da imagem (ex: image/png, image/jpeg).
-
-**Baixar imagem pública via curl:**
-
+### Download de blob
 ```bash
-curl -L "http://127.0.0.1:3000/blob/<id>" --output minha-imagem.jpg
+# Público
+curl -L "http://127.0.0.1:3000/blob/<id>" --output arquivo.ext
+# Privado (admin)
+curl -L -H "x-admin-token: <TOKEN_SECRET>" "http://127.0.0.1:3000/blob/<id>" --output arquivo.ext
+# Privado (externo via URL assinada)
+curl "http://127.0.0.1:3000/blob/<id>/sign?ttl=300"
+curl -L "http://127.0.0.1:3000/blob/<id>?exp=<exp>&n=<nonce>&sig=<sig>" --output arquivo.ext
 ```
 
 **Baixar imagem privada (admin):**
@@ -213,20 +199,23 @@ curl "http://127.0.0.1:3000/blob/<id>/sign?ttl=300"
 curl -L "http://127.0.0.1:3000/blob/<id>?exp=<exp>&n=<nonce>&sig=<sig>" --output arquivo.bin
 ```
 
-### 🗑️ Remover Blob (admin)
 
+### Remover blob
 ```bash
 curl -X DELETE -H "x-admin-token: <TOKEN_SECRET>" "http://127.0.0.1:3000/blob/<id>"
 ```
 
-## 🔒 Segurança
 
-- Assinatura HMAC-SHA512 com `nonce` e expiração
-- Validação de `bucket`/`key` e bloqueio de path traversal
-- Rate limit por IP nas rotas privadas
-- Headers `x-ratelimit-remaining` e `x-ratelimit-reset`
+## Segurança
 
-## 📜 Scripts
+- URLs assinadas HMAC-SHA512 (nonce, expiração, TTL)
+- Validação de bucket/key, bloqueio path traversal
+- Rate limit configurável por rota
+- Headers: `x-ratelimit-remaining`, `x-ratelimit-reset`
+- Upload seguro: restrição de MIME opcional
+
+
+## Scripts Úteis
 
 ```bash
 npm run dev
@@ -238,11 +227,24 @@ npm run typecheck
 npm run check
 ```
 
-## 🛠️ Troubleshooting
 
-- Erro de schema/DB:
-	- execute `npm run db:prepare`.
-- Erro de assinatura em blob privado:
-	- gere novamente via `/blob/:id/sign` e use os parametros `exp`, `n`, `sig` sem alteracao.
-- Upload rejeitado por MIME:
-	- ajuste `ALLOWED_MIME_TYPES` no `.env` ou remova a variavel para aceitar qualquer MIME.
+## Troubleshooting
+
+- Erro de schema/DB: execute `npm run db:prepare`
+- Erro de assinatura: gere nova URL via `/blob/:id/sign` e use os parâmetros retornados
+- Upload rejeitado: ajuste `ALLOWED_MIME_TYPES` no `.env` ou remova para aceitar qualquer tipo
+
+---
+
+## Limitações e Observações
+
+- Não há versionamento de blobs (sobrescrita = novo registro)
+- Expiração só é aplicada se `expiresAt` for definido
+- Não há antivírus embutido (faça validação externa se necessário)
+- URLs assinadas respeitam TTL e expiração do blob
+
+---
+
+## Contato e Suporte
+
+Para dúvidas técnicas, sugestões ou bugs, abra uma issue ou entre em contato com o mantenedor.
