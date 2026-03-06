@@ -1,4 +1,4 @@
-import { sign, verifySignature } from "#functions/signer";
+import { createNonce, sign, verifySignature } from "#functions/signer";
 import {
   deleteBlobById,
   findBlobById,
@@ -9,6 +9,38 @@ import {
 
 function asJsonSafeBlob(blob) {
   return blob;
+}
+
+const rateLimitStore = new Map();
+
+function consumeRateLimit({ scope, key, max, windowMs }) {
+  const now = Date.now();
+  const bucketKey = `${scope}:${key}`;
+  const current = rateLimitStore.get(bucketKey);
+
+  if (!current || current.resetAt <= now) {
+    rateLimitStore.set(bucketKey, {
+      count: 1,
+      resetAt: now + windowMs,
+    });
+    return { ok: true, remaining: max - 1 };
+  }
+
+  if (current.count >= max) {
+    return { ok: false, remaining: 0, retryAfterMs: current.resetAt - now };
+  }
+
+  current.count += 1;
+  return { ok: true, remaining: Math.max(0, max - current.count) };
+}
+
+function getClientIp(req) {
+  return req.ip || req.headers["x-forwarded-for"] || "unknown";
+}
+
+function getEnvInt(name, fallback) {
+  const parsed = Number(process.env[name] ?? fallback);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function parseBoolean(value, fallback = false) {
@@ -73,6 +105,20 @@ export async function listBlobs(req, res, next) {
 
 export async function getBlob(req, res, next) {
   try {
+    const downloadLimit = consumeRateLimit({
+      scope: "download",
+      key: getClientIp(req),
+      max: getEnvInt("DOWNLOAD_RATE_LIMIT_MAX", 120),
+      windowMs: getEnvInt("DOWNLOAD_RATE_LIMIT_WINDOW_MS", 60_000),
+    });
+
+    if (!downloadLimit.ok) {
+      return res.status(429).json({
+        error: "Too many requests",
+        retryAfterMs: downloadLimit.retryAfterMs,
+      });
+    }
+
     const blob = await findBlobById(req.params.id);
 
     if (!blob) {
@@ -82,15 +128,24 @@ export async function getBlob(req, res, next) {
     if (!blob.public) {
       const exp = Number(req.query.exp);
       const sig = req.query.sig;
+      const nonce = req.query.n;
 
-      if (!req.query.exp || !req.query.sig) {
+      if (!req.query.exp || !req.query.sig || !req.query.n) {
         return res.status(403).json({
           error:
             "Private blob requires signed URL. Use GET /blob/:id/sign first.",
         });
       }
 
-      if (!verifySignature({ id: blob.id, exp, sig })) {
+      if (
+        !verifySignature({
+          id: blob.id,
+          exp,
+          nonce,
+          sig,
+          method: req.method,
+        })
+      ) {
         return res.status(403).json({ error: "Invalid or expired signature" });
       }
     }
@@ -121,21 +176,46 @@ export async function destroyBlob(req, res, next) {
 
 export async function getBlobSignedUrl(req, res, next) {
   try {
+    const signLimit = consumeRateLimit({
+      scope: "sign",
+      key: `${getClientIp(req)}:${req.params.id}`,
+      max: getEnvInt("SIGN_RATE_LIMIT_MAX", 20),
+      windowMs: getEnvInt("SIGN_RATE_LIMIT_WINDOW_MS", 60_000),
+    });
+
+    if (!signLimit.ok) {
+      return res.status(429).json({
+        error: "Too many signature requests",
+        retryAfterMs: signLimit.retryAfterMs,
+      });
+    }
+
     const blob = await findBlobById(req.params.id);
 
     if (!blob) {
       return res.status(404).json({ error: "Blob not found" });
     }
 
-    const ttlInSeconds = Number(req.query.ttl ?? 300);
+    const requestedTtl = Number(req.query.ttl ?? 300);
+    const minTtl = getEnvInt("SIGNED_URL_TTL_MIN_SECONDS", 30);
+    const maxTtl = getEnvInt("SIGNED_URL_TTL_MAX_SECONDS", 900);
+    const ttlInSeconds = Math.min(maxTtl, Math.max(minTtl, requestedTtl));
     const exp = Math.floor(Date.now() / 1000) + ttlInSeconds;
-    const sig = sign(blob.id, exp);
+    const nonce = createNonce();
+    const sig = sign({
+      id: blob.id,
+      exp,
+      nonce,
+      method: "GET",
+    });
 
     return res.json({
       id: blob.id,
       exp,
+      n: nonce,
       sig,
-      url: `/blob/${blob.id}?exp=${exp}&sig=${sig}`,
+      ttl: ttlInSeconds,
+      url: `/blob/${blob.id}?exp=${exp}&n=${nonce}&sig=${sig}`,
     });
   } catch (error) {
     return next(error);
