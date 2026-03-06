@@ -7,8 +7,6 @@ import morgan from "morgan";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "#functions/logger";
 import blobRouter from "#routes/blob.routes";
-import "#db/redis";
-import "#db/prisma";
 import "dotenv/config";
 
 const app = express();

@@ -3,12 +3,18 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+const localSqliteUrl = "file:./data/blob.db";
+const configuredUrl = process.env.DATABASE_URL;
+const databaseUrl = configuredUrl?.startsWith("file:")
+  ? configuredUrl
+  : localSqliteUrl;
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env.DATABASE_URL,
+    url: databaseUrl,
   },
 });

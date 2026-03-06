@@ -1,26 +1,32 @@
-import pkg from "@prisma/client";
-
-const { PrismaClient } = pkg;
-
-import fs from "node:fs";
-import { PrismaPg } from "@prisma/adapter-pg";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "@prisma/client";
 import { logger } from "#functions/logger";
 import "dotenv/config";
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-  ssl:
-    process.env.NODE_ENV === "production" &&
-    process.env.DATABASE_SSL_CA &&
-    process.env.DATABASE_SSL_CERT &&
-    process.env.DATABASE_SSL_KEY
-      ? {
-          ca: fs.readFileSync(process.env.DATABASE_SSL_CA, "utf-8"),
-          cert: fs.readFileSync(process.env.DATABASE_SSL_CERT, "utf-8"),
-          key: fs.readFileSync(process.env.DATABASE_SSL_KEY, "utf-8"),
-          rejectUnauthorized: true,
-        }
-      : null,
+const databaseUrl = process.env.DATABASE_URL?.startsWith("file:")
+  ? process.env.DATABASE_URL
+  : "file:./data/blob.db";
+
+async function ensureSqliteDirectory() {
+  if (!databaseUrl.startsWith("file:")) {
+    return;
+  }
+
+  const rawPath = databaseUrl.replace("file:", "");
+  const absolutePath = path.resolve(process.cwd(), rawPath);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+}
+
+await ensureSqliteDirectory();
+
+const sqlitePath = path.resolve(
+  process.cwd(),
+  databaseUrl.replace("file:", ""),
+);
+const adapter = new PrismaBetterSqlite3({
+  url: sqlitePath,
 });
 
 const prisma = new PrismaClient({
@@ -30,10 +36,9 @@ const prisma = new PrismaClient({
 (async () => {
   await prisma.$queryRaw`SELECT 1`
     .then(() => {
-      return logger.debug(
-        `Prisma connected to the database (${process.env.DATABASE_URL.replace(/^(.*?:).*$/, "$1*******")})`,
-        { type: "database" },
-      );
+      return logger.debug(`Prisma connected to SQLite (${databaseUrl})`, {
+        type: "database",
+      });
     })
     .catch((err) => {
       return logger.error(

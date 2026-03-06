@@ -1,0 +1,18 @@
+services:
+  blob:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blob-local
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: file:./data/blob.db
+      STORAGE_PATH: data/blob-storage
+      TOKEN_SECRET: change-me-in-production
+      MAX_UPLOAD_SIZE_BYTES: 20971520
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

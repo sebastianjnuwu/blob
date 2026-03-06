@@ -3,21 +3,21 @@ generator client {
 }
 
 datasource db {
- provider = "postgresql"
+ provider = "sqlite"
 }
 
 model Blob {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   bucket    String
   key       String
   filename  String
   mime      String
-  size      BigInt
+  size      Int
   hash      String   @unique
   path      String
   public    Boolean  @default(false)
   version   Int      @default(1)
-  metadata  Json?
+  metadata  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
