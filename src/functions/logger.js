@@ -92,7 +92,8 @@ class Logger {
     });
 
     ["info", "error", "warn", "debug"].forEach((level) => {
-      this[level] = (message) => this.logger.log({ level, message });
+      this[level] = (message, meta = undefined) =>
+        this.logger.log({ level, message, meta });
     });
   }
 }

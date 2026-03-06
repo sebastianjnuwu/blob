@@ -1,31 +1,174 @@
-import fs from "fs/promises"
-import db from "#db/db"
-import { sha256 } from "#functions/hash.js"
-import { buildStoragePath } from "#functions/storagePath.js"
+import fs from "node:fs/promises";
+import path from "node:path";
+import prisma from "#db/prisma";
+import { sha256 } from "#functions/hash";
+import { buildStoragePath } from "#functions/storagePath";
 
-export async function saveBlob(file) {
+const BUCKET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}$/;
 
-    const buffer = file.buffer
+function asHttpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
 
-    const hash = sha256(buffer)
+function normalizeBucket(value) {
+  const bucket = (value || "default").trim();
 
-    const path = buildStoragePath(hash)
+  if (!BUCKET_PATTERN.test(bucket)) {
+    throw asHttpError("Invalid bucket name", 400);
+  }
 
-    await fs.mkdir(path.substring(0, path.lastIndexOf("/")), { recursive: true })
+  return bucket;
+}
 
-    await fs.writeFile(path, buffer)
+function normalizeKey(value, originalname) {
+  const key = (value || originalname).trim();
 
-    const blob = await db.blob.create({
-        data: {
-            bucket: "default",
-            key: file.originalname,
-            filename: file.originalname,
-            mime: file.mimetype,
-            size: file.size,
-            hash,
-            path
-        }
-    })
+  if (!key) {
+    throw asHttpError("Missing file key", 400);
+  }
 
-    return blob
+  if (key.includes("..") || path.isAbsolute(key) || key.includes("\\")) {
+    throw asHttpError("Invalid file key", 400);
+  }
+
+  return key;
+}
+
+function parseMetadata(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      throw asHttpError("metadata must be a valid JSON object", 400);
+    }
+  }
+
+  throw asHttpError("metadata must be a valid JSON object", 400);
+}
+
+function ensureAllowedMime(mime) {
+  const allowedMimes = process.env.ALLOWED_MIME_TYPES?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!allowedMimes?.length) {
+    return;
+  }
+
+  if (!allowedMimes.includes(mime)) {
+    throw asHttpError("MIME type not allowed", 415);
+  }
+}
+
+export async function saveBlob(file, options = {}) {
+  if (!file?.buffer) {
+    throw asHttpError("Invalid upload payload", 400);
+  }
+
+  ensureAllowedMime(file.mimetype);
+
+  const hash = sha256(file.buffer);
+  const relativePath = buildStoragePath(hash);
+  const absolutePath = path.resolve(process.cwd(), relativePath);
+
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs
+    .writeFile(absolutePath, file.buffer, { flag: "wx" })
+    .catch(async (error) => {
+      if (error.code !== "EEXIST") {
+        throw error;
+      }
+    });
+
+  try {
+    return await prisma.blob.create({
+      data: {
+        bucket: normalizeBucket(options.bucket),
+        key: normalizeKey(options.key, file.originalname),
+        filename: file.originalname,
+        mime: file.mimetype,
+        size: BigInt(file.size),
+        hash,
+        path: relativePath,
+        public: Boolean(options.isPublic),
+        metadata: parseMetadata(options.metadata),
+      },
+    });
+  } catch (error) {
+    if (error?.code === "P2002") {
+      throw asHttpError("This file content already exists", 409);
+    }
+
+    throw error;
+  }
+}
+
+export async function findBlobById(id) {
+  if (!id) {
+    return null;
+  }
+
+  return prisma.blob.findFirst({
+    where: {
+      id,
+      deletedAt: null,
+    },
+  });
+}
+
+export async function listBlobItems({ page = 1, pageSize = 20, bucket } = {}) {
+  const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
+  const safePageSize =
+    Number.isNaN(pageSize) || pageSize < 1 ? 20 : Math.min(pageSize, 100);
+  const where = {
+    deletedAt: null,
+  };
+
+  if (bucket) {
+    where.bucket = normalizeBucket(bucket);
+  }
+
+  const [data, total] = await prisma.$transaction([
+    prisma.blob.findMany({
+      where,
+      skip: (safePage - 1) * safePageSize,
+      take: safePageSize,
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.blob.count({ where }),
+  ]);
+
+  return { data, total };
+}
+
+export async function deleteBlobById(id) {
+  const existing = await findBlobById(id);
+
+  if (!existing) {
+    return null;
+  }
+
+  await prisma.blob.update({
+    where: { id },
+    data: {
+      deletedAt: new Date(),
+    },
+  });
+
+  const absolutePath = path.resolve(process.cwd(), existing.path);
+  await fs.unlink(absolutePath).catch(() => {});
+
+  return existing;
 }
