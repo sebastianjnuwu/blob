@@ -7,7 +7,6 @@ import (
 	"blob/src/routes"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -19,7 +18,7 @@ func main() {
 	database.Postgres()
 
 	mux := http.NewServeMux()
-	limiter := middleware.NewRateLimiterFromEnv()
+	limiter := middleware.Variables()
 	routes.RegisterRoutes(mux, limiter)
 
 	PORT := os.Getenv("BLOB_PORT")
@@ -31,8 +30,6 @@ func main() {
 		HOST = "localhost"
 	}
 
-	now := time.Now().Format("Mon Jan 2 15:04:05 2006")
-
-	functions.Info("[SERVER] Server running at: http://%s:%s (%s)", HOST, PORT, now)
+	functions.Info("[SERVER] Server running at: http://%s:%s", HOST, PORT)
 	http.ListenAndServe(HOST+":"+PORT, mux)
 }

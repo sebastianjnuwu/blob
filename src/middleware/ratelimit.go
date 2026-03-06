@@ -10,13 +10,6 @@ import (
 	"time"
 )
 
-// Package middleware fornece middlewares HTTP para a aplicação.
-//
-// RateLimiter implementa um middleware de rate limit por IP usando Redis como backend.
-// O limite e a janela de tempo são configurados via variáveis de ambiente:
-//   - BLOB_RATE_LIMIT_MAX: número máximo de requisições por janela
-//   - BLOB_RATE_LIMIT_WINDOW_MS: duração da janela em milissegundos
-
 type RateLimiter struct {
 	max    int
 	window time.Duration
@@ -26,7 +19,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewRateLimiterFromEnv() *RateLimiter {
+func Variables() *RateLimiter {
 	max, _ := strconv.Atoi(os.Getenv("BLOB_RATE_LIMIT_MAX"))
 	windowMs, _ := strconv.Atoi(os.Getenv("BLOB_RATE_LIMIT_WINDOW_MS"))
 	return &RateLimiter{

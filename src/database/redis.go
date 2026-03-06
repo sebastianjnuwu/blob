@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"os"
-	"time"
 
 	"blob/src/functions"
 
@@ -16,22 +15,22 @@ var Ctx = context.Background()
 func Redis() {
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
-		redisURL = "redis://localhost:6379/0"
+		functions.Error("[REDIS ERROR] REDIS_URL environment variable is not set")
+		os.Exit(1)
 	}
 
 	opt, err := redis.ParseURL(redisURL)
-	now := time.Now().Format("Mon Jan 2 15:04:05 2006")
 
 	if err != nil {
-		functions.Error("[REDIS ERROR] Invalid URL: %v (%s)", err, now)
+		functions.Error("[REDIS ERROR] Invalid URL: %v", err)
 		return
 	}
 
 	RedisClient = redis.NewClient(opt)
 
 	if err := RedisClient.Ping(Ctx).Err(); err != nil {
-		functions.Error("[REDIS ERROR] %v (%s)", err, now)
+		functions.Error("[REDIS ERROR] %v", err)
 	} else {
-		functions.Info("[REDIS] Connected successfully. (%s)", now)
+		functions.Info("[REDIS] Connected successfully.")
 	}
 }

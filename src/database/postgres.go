@@ -2,7 +2,6 @@ package database
 
 import (
 	"os"
-	"time"
 
 	"blob/src/functions"
 
@@ -15,27 +14,26 @@ var DB *gorm.DB
 func Postgres() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "host=localhost user=postgres password=postgres dbname=postgres port=5432 sslmode=disable"
+		functions.Error("[POSTGRES ERROR] DATABASE_URL environment variable is not set")
+		os.Exit(1)
 	}
-
-	now := time.Now().Format("Mon Jan 2 15:04:05 2006")
 
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		functions.Error("[POSTGRES ERROR] %v (%s)", err, now)
+		functions.Error("[POSTGRES ERROR] %v", err)
 		return
 	}
 
 	sqlDB, err := DB.DB()
 	if err != nil {
-		functions.Error("[POSTGRES ERROR] %v (%s)", err, now)
+		functions.Error("[POSTGRES ERROR] %v", err)
 		return
 	}
 
 	if err := sqlDB.Ping(); err != nil {
-		functions.Error("[POSTGRES ERROR] %v (%s)", err, now)
+		functions.Error("[POSTGRES ERROR] %v", err)
 	} else {
-		functions.Info("[POSTGRES] Connected successfully. (%s)", now)
+		functions.Info("[POSTGRES] Connected successfully.")
 	}
 }

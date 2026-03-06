@@ -7,8 +7,13 @@ import (
 
 func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 
-	mux.HandleFunc("GET /health", HealthHandler)
+	// GET /health (public)
+	mux.Handle(
+		"GET /health",
+		limiter.Middleware(http.HandlerFunc(HealthHandler)),
+	)
 
+	// GET / (public)
 	mux.Handle(
 		"GET /",
 		limiter.Middleware(http.HandlerFunc(GETHandler)),
