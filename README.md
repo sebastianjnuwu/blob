@@ -18,7 +18,7 @@
 ## Database Schema
 
 | Column           | Type        | Nullable | Description                                      |
-|------------------|------------ |--------- |-------------------------------------------------|
+|------------------|-------------|----------|--------------------------------------------------|
 | `id`             | UUID        | No       | Unique identifier for each blob                 |
 | `bucket`         | TEXT        | No       | Logical grouping for files                      |
 | `filename`       | TEXT        | No       | Original file name                              |
@@ -68,7 +68,7 @@ curl -X GET "http://localhost:3000/health"
 
 | Field       | Required | Type     | Description                                                                 |
 |-------------|----------|----------|-----------------------------------------------------------------------------|
-| file        | Yes      | file     | The file to upload                                                          |
+| file        | Yes      | file     | The file to upload                                                           |
 | filename    | No       | string   | Name to save the file as (default: original upload name)                     |
 | bucket      | Yes      | string   | Bucket name (logical group)                                                  |
 | public      | No       | boolean  | Whether the blob is public (default: true). Accepts "true", "false", "0", "1" |
@@ -99,7 +99,7 @@ curl -X PUT "http://localhost:3000/blob" \
   "mime": "application/octet-stream",
   "size": 3625,
   "hash": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "path": "storage/uploads/1ddff9d2-3aa1-485d-8082-e484c62ff630",
+  "path": "test/1ddff9d2-3aa1-485d-8082-e484c62ff630",
   "public": false,
   "created_at": "2026-03-07T12:31:05.2082654-03:00",
   "updated_at": "2026-03-07T12:31:05.2082654-03:00",
@@ -107,7 +107,57 @@ curl -X PUT "http://localhost:3000/blob" \
   "metadata": {
     "author": "user",
     "desc": "test file"
+  }
+}
+```
+
+
+### GET `/blob` (List Blobs)
+
+Returns a paginated list of blobs. Supports filtering by bucket and searching by filename.
+
+**Query parameters:**
+
+| Parameter   | Required | Type   | Description                                              |
+|------------ |----------|--------|----------------------------------------------------------|
+| bucket      | No       | string | Filter by bucket name                                   |
+| search      | No       | string | Search by filename (partial match, case-insensitive)    |
+| page        | No       | int    | Page number (default: 1)                                |
+| page_size   | No       | int    | Number of items per page (default: 20, max: 100)        |
+
+**Example usage:**
+
+```bash
+curl -X GET "http://localhost:3000/blob?bucket=test&search=report&page=1&page_size=10"
+```
+
+#### response
+
+```json
+{
+  "meta": {
+    "page": 1,
+    "per_page": 10,
+    "count": 1,
+    "pages": 1,
+    "total": 42
   },
-  "url": "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630"
+  "blobs": [
+    {
+      "id": "...",
+      "bucket": "test",
+      "filename": "report1.pdf",
+      "mime": "application/pdf",
+      "size": 12345,
+      "hash": "...",
+      "path": "test/...",
+      "public": true,
+      "created_at": "2026-03-07T12:31:05.2082654-03:00",
+      "updated_at": "2026-03-07T12:31:05.2082654-03:00",
+      "expires_at": null,
+      "metadata": {"author": "user"}
+    }
+    // ...more blobs
+  ]
 }
 ```

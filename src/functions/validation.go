@@ -1,10 +1,36 @@
 package functions
 
 import (
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// StringInSlice checks if a string is in a slice
+func StringInSlice(val string, list []string) bool {
+	for _, v := range list {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}
+
+// WriteJSONError writes a JSON error response with the given message and status code.
+func WriteJSONError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// WriteJSONMethodNotAllowed writes a JSON response for method not allowed.
+func WriteJSONMethodNotAllowed(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
+}
 
 // SplitAndTrim splits a string by sep and trims spaces from each element.
 func SplitAndTrim(s, sep string) []string {
