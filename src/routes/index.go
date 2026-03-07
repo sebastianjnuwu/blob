@@ -5,6 +5,7 @@ import (
 	"blob/src/functions"
 	"blob/src/middleware"
 	"net/http"
+	"strings"
 )
 
 func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
@@ -18,12 +19,6 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 	mux.Handle(
 		"GET /health",
 		limiter.Middleware(http.HandlerFunc(HealthHandler)),
-	)
-
-	// GET / (public)
-	mux.Handle(
-		"GET /",
-		limiter.Middleware(http.HandlerFunc(GETHandler)),
 	)
 
 	// PUT /blob (private)
@@ -43,6 +38,16 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		"GET /blob/{id}",
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.GetBlobController))),
 	)
+	// Custom handler for /blob/* to support dynamic download route
+	mux.HandleFunc("/blob/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasSuffix(path, "/download") || strings.HasSuffix(path, "/download/") {
+			controllers.DownloadBlobController(w, r)
+			return
+		}
+		// fallback: method not allowed or not found
+		functions.WriteJSONMethodNotAllowed(w)
+	})
 	// POST /blob/{id} (private)
 	mux.Handle(
 		"POST /blob/{id}",

@@ -8,7 +8,8 @@ Simple HTTP service for storing and retrieving binary files (blobs) with metadat
 | ------ | -------------------- | ------- | ---------------------- |
 | PUT    | `/blob`              | true    | Upload a blob          |
 | GET    | `/blob`              | true    | List blobs             |
-| GET    | `/blob/:id`          | false   | Get blob metadata      |
+| GET    | `/blob/:id`          | true    | Get blob metadata      |
+| GET    | `/blob/:id/download` | true    | Download blob file     |
 | POST   | `/blob/:id`          | true    | Edit blob fields       |
 | DELETE | `/blob/:id`          | true    | Delete blob            |
 | GET    | `/health`            | false   | Healthcheck            |
@@ -198,6 +199,15 @@ Response:
     "desc": "test file"
   }
 }
+```
+
+### GET `/blob/:id/download`
+
+```bash
+curl -X GET \
+  http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download \
+  -H "Authorization: Bearer change-me-with-32-characters-or-more" \
+  -o downloaded_file.ext
 ```
 
 ### POST `/blob/:id`
