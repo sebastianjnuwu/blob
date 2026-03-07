@@ -95,14 +95,19 @@ curl -X PUT "http://localhost:3000/blob" \
 {
   "id": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
   "bucket": "test",
-  "filename": "README.md",
+  "filename": "custom_name.txt",
   "mime": "application/octet-stream",
   "size": 3625,
   "hash": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
   "path": "storage/uploads/1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "public": true,
+  "public": false,
   "created_at": "2026-03-07T12:31:05.2082654-03:00",
   "updated_at": "2026-03-07T12:31:05.2082654-03:00",
+  "expires_at": "2026-03-02T12:00:00Z",
+  "metadata": {
+    "author": "user",
+    "desc": "test file"
+  },
   "url": "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630"
 }
 ```
