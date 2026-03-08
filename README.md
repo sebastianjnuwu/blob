@@ -2,6 +2,19 @@
 
 Simple HTTP service for storing and retrieving binary files (blobs) with metadata.
 
+## Docker Image
+
+### ![CI/CD](https://github.com/sebastianjnuwu/blob/actions/workflows/ci.yml/badge.svg)
+
+This project automatically builds and publishes a Docker image to GitHub Container Registry (GHCR) on every push to `main`.
+
+**To pull and run the latest image:**
+
+```bash
+docker pull ghcr.io/sebastianjnuwu/blob:latest
+docker run -p 3000:3000 --env-file .env ghcr.io/sebastianjnuwu/blob:latest
+```
+
 ## Routes
 
 | Method | Route                          | Private | Description                          |
