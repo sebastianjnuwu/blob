@@ -20,14 +20,18 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 3 || parts[2] == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+		}
 		return
 	}
 	idStr := parts[2]
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+		}
 		return
 	}
 
@@ -35,7 +39,9 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	result := database.DB.First(&blob, "id = ?", id)
 	if result.Error != nil {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+		}
 		return
 	}
 
@@ -47,7 +53,9 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON body"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON body"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+		}
 		return
 	}
 
@@ -55,7 +63,9 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		metaBytes, err := json.Marshal(req.Metadata)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Metadata must be valid JSON"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Metadata must be valid JSON"}); err != nil {
+				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			}
 			return
 		}
 		blob.Metadata = metaBytes
@@ -67,12 +77,16 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "expires_at must be RFC3339 date"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "expires_at must be RFC3339 date"}); err != nil {
+				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			}
 			return
 		}
 		if t.Before(time.Now().UTC()) {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "expires_at cannot be in the past"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "expires_at cannot be in the past"}); err != nil {
+				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			}
 			return
 		}
 		blob.ExpiresAt = &t
@@ -95,16 +109,22 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		salt := fmt.Sprintf("%d", time.Now().UnixNano())
 		hashInput += salt
 		sha := sha256.New()
-		sha.Write([]byte(hashInput))
+		if _, err := sha.Write([]byte(hashInput)); err != nil {
+			// Optionally log: fmt.Println("failed to write hash input:", err)
+		}
 		blob.Hash = hex.EncodeToString(sha.Sum(nil))
 	}
 
 	if err := database.DB.Save(&blob).Error; err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update blob"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update blob"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(blob)
+	if err := json.NewEncoder(w).Encode(blob); err != nil {
+		// Optionally log: fmt.Println("failed to encode edit blob json:", err)
+	}
 }

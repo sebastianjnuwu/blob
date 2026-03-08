@@ -21,7 +21,9 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 	if len(parts) < 3 || parts[0] != "blob" || parts[2] != "download" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"Invalid download URL"}`))
+		if _, err := w.Write([]byte(`{"error":"Invalid download URL"}`)); err != nil {
+			// log.Println("failed to write error:", err)
+		}
 		return
 	}
 
@@ -29,7 +31,9 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"Invalid blob id"}`))
+		if _, err := w.Write([]byte(`{"error":"Invalid blob id"}`)); err != nil {
+			// log.Println("failed to write error:", err)
+		}
 		return
 	}
 
@@ -38,14 +42,18 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 	if err := database.DB.First(&blob, "id = ?", id).Error; err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"Blob not found"}`))
+		if _, err := w.Write([]byte(`{"error":"Blob not found"}`)); err != nil {
+			// log.Println("failed to write error:", err)
+		}
 		return
 	}
 
 	if blob.ExpiresAt != nil && blob.ExpiresAt.Before(time.Now()) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusGone)
-		w.Write([]byte(`{"error":"Blob expired"}`))
+		if _, err := w.Write([]byte(`{"error":"Blob expired"}`)); err != nil {
+			// Optionally log: fmt.Println("failed to write blob expired json:", err)
+		}
 		return
 	}
 
@@ -70,7 +78,9 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 		if !hashValid && !hasValidToken {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(`{"error":"Forbidden"}`))
+			if _, err := w.Write([]byte(`{"error":"Forbidden"}`)); err != nil {
+				// Optionally log: fmt.Println("failed to write forbidden json:", err)
+			}
 			return
 		}
 	}
@@ -86,7 +96,9 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"File not found on disk"}`))
+		if _, err := w.Write([]byte(`{"error":"File not found on disk"}`)); err != nil {
+			// Optionally log: fmt.Println("failed to write file not found json:", err)
+		}
 		return
 	}
 	defer file.Close()

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"blob/src/controllers"
+	multipart "blob/src/controllers/multipart"
 	"blob/src/functions"
 	"blob/src/middleware"
 	"net/http"
@@ -27,6 +28,46 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.UploadBlobController))),
 	)
 
+	// POST /blob/initiate (private)
+	mux.Handle(
+		"POST /blob/initiate",
+		limiter.Middleware(
+			middleware.AuthMiddleware(
+				http.HandlerFunc(multipart.InitiateUpload),
+			),
+		),
+	)
+
+	// PUT /blob/{uploadId}/chunk (private)
+	mux.Handle(
+		"PUT /blob/{uploadId}/chunk",
+		limiter.Middleware(
+			middleware.AuthMiddleware(
+				http.HandlerFunc(multipart.UploadChunk),
+			),
+		),
+	)
+
+	// POST /blob/{uploadId}/complete (private)
+	mux.Handle(
+		"POST /blob/{uploadId}/complete",
+		limiter.Middleware(
+			middleware.AuthMiddleware(
+				http.HandlerFunc(multipart.CompleteUpload),
+			),
+		),
+	)
+
+	// GET /blob/{uploadId}/status (private)
+	mux.Handle(
+		"GET /blob/{uploadId}/status",
+		limiter.Middleware(
+			middleware.AuthMiddleware(
+				http.HandlerFunc(multipart.UploadStatus),
+			),
+		),
+	)
+
 	// GET /blob (private)
 	mux.Handle(
 		"GET /blob",
@@ -38,6 +79,7 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		"GET /blob/{id}",
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.GetBlobController))),
 	)
+
 	// Custom handler for /blob/* to support dynamic download route
 	mux.HandleFunc("/blob/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -48,14 +90,17 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		// fallback: method not allowed or not found
 		functions.WriteJSONMethodNotAllowed(w)
 	})
+
 	// POST /blob/{id} (private)
 	mux.Handle(
 		"POST /blob/{id}",
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.EditBlobController))),
 	)
+
 	// DELETE /blob/{id} (private)
 	mux.Handle(
 		"DELETE /blob/{id}",
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.DeleteBlobController))),
 	)
+
 }

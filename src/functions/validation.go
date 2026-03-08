@@ -22,14 +22,14 @@ func StringInSlice(val string, list []string) bool {
 func WriteJSONError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 // WriteJSONMethodNotAllowed writes a JSON response for method not allowed.
 func WriteJSONMethodNotAllowed(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusMethodNotAllowed)
-	json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
 }
 
 // SplitAndTrim splits a string by sep and trims spaces from each element.

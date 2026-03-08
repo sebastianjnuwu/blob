@@ -51,10 +51,12 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 	if len(validationErrors) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":  "Validation failed",
 			"fields": validationErrors,
-		})
+		}); err != nil {
+			// Optionally log: fmt.Println("failed to encode validation error json:", err)
+		}
 		return
 	}
 
@@ -74,7 +76,19 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 		storagePath = "storage/uploads"
 	}
 
-	mime := header.Header.Get("Content-Type")
+	// Detect MIME type real lendo os primeiros 512 bytes
+	var mime string
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		functions.WriteJSONError(w, "Failed to seek file", http.StatusInternalServerError)
+		return
+	}
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	mime = http.DetectContentType(buf[:n])
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		functions.WriteJSONError(w, "Failed to seek file", http.StatusInternalServerError)
+		return
+	}
 
 	if !functions.IsAllowedMimeType(mime, functions.SplitComma(allowedMimes)) {
 		functions.WriteJSONError(w, "MIME type not allowed", http.StatusBadRequest)
@@ -101,7 +115,10 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bucketPath := storagePath + string(os.PathSeparator) + bucket
-	os.MkdirAll(bucketPath, 0755)
+	if err := os.MkdirAll(bucketPath, 0755); err != nil {
+		functions.WriteJSONError(w, "Failed to create bucket directory", http.StatusInternalServerError)
+		return
+	}
 
 	blobPath := bucketPath + string(os.PathSeparator) + id.String()
 
@@ -120,7 +137,9 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 
 	var metaJson map[string]interface{}
 	if metadata != "" {
-		json.Unmarshal([]byte(metadata), &metaJson)
+		if err := json.Unmarshal([]byte(metadata), &metaJson); err != nil {
+			// log.Println("failed to unmarshal metadata:", err)
+		}
 	}
 
 	var expiresAt *time.Time

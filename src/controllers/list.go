@@ -46,7 +46,7 @@ func ListBlobsController(w http.ResponseWriter, r *http.Request) {
 	if total > 0 {
 		pages = int((total + int64(pageSize) - 1) / int64(pageSize))
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"meta": map[string]interface{}{
 			"page":     page,
 			"per_page": pageSize,
@@ -55,5 +55,7 @@ func ListBlobsController(w http.ResponseWriter, r *http.Request) {
 			"total":    total,
 		},
 		"blobs": blobs,
-	})
+	}); err != nil {
+		// Optionally log: fmt.Println("failed to encode list json:", err)
+	}
 }

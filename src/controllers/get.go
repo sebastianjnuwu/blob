@@ -17,14 +17,18 @@ func GetBlobController(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 3 || parts[2] == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode get error json:", err)
+		}
 		return
 	}
 	idStr := parts[2]
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode get error json:", err)
+		}
 		return
 	}
 
@@ -32,10 +36,14 @@ func GetBlobController(w http.ResponseWriter, r *http.Request) {
 	result := database.DB.First(&blob, "id = ?", id)
 	if result.Error != nil {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"}); err != nil {
+			// Optionally log: fmt.Println("failed to encode get error json:", err)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(blob)
+	if err := json.NewEncoder(w).Encode(blob); err != nil {
+		// Optionally log: fmt.Println("failed to encode blob json:", err)
+	}
 }

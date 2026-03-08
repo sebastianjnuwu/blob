@@ -16,7 +16,9 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	if err := godotenv.Load(); err != nil {
+		// log.Println("failed to load .env:", err)
+	}
 	database.Redis()
 	database.Postgres()
 
@@ -54,6 +56,8 @@ func main() {
 	}
 
 	functions.Info("[SERVER] Server running at: http://%s:%s", host, port)
-	http.ListenAndServe(host+":"+port, handler)
+	if err := http.ListenAndServe(host+":"+port, handler); err != nil {
+		// log.Println("server error:", err)
+	}
 
 }

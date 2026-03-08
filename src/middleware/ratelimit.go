@@ -39,7 +39,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		if err != nil || int(count) > rl.max {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(ErrorResponse{Error: "rate limit exceeded"})
+			_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "rate limit exceeded"})
 			return
 		}
 		next.ServeHTTP(w, r)

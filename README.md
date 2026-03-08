@@ -4,16 +4,20 @@ Simple HTTP service for storing and retrieving binary files (blobs) with metadat
 
 ## Routes
 
-| Method | Route                | Private | Description            |
-| ------ | -------------------- | ------- | ---------------------- |
-| PUT    | `/blob`              | true    | Upload a blob          |
-| GET    | `/blob`              | true    | List blobs             |
-| GET    | `/blob/:id`          | true    | Get blob metadata      |
-| POST   | `/blob/:id`          | true    | Edit blob fields       |
-| GET    | `/blob/:id/download` | false   | Download blob file     |
-| DELETE | `/blob/:id`          | true    | Delete blob            |
-| GET    | `/health`            | false   | Healthcheck            |
-| GET    | `/`                  | false   | Hello, World           |
+| Method | Route                          | Private | Description                          |
+| ------ | ------------------------------ | ------- | ------------------------------------ |
+| PUT    | `/blob`                        | true    | Upload a blob                        |
+| POST   | `/blob/initiate`               | true    | Initiate multipart upload (huge file) |
+| PUT    | `/blob/:id/chunk`       | true    | Upload a chunk (multipart)            |
+| POST   | `/blob/:id/complete`    | true    | Complete multipart upload             |
+| GET    | `/blob/:id/status`      | true    | Check multipart upload status         |
+| GET    | `/blob`                        | true    | List blobs                            |
+| GET    | `/blob/:id`                    | true    | Get blob metadata                     |
+| POST   | `/blob/:id`                    | true    | Edit blob fields                      |
+| GET    | `/blob/:id/download`           | false   | Download blob file                    |
+| DELETE | `/blob/:id`                    | true    | Delete blob                           |
+| GET    | `/health`                      | false   | Healthcheck                           |
+| GET    | `/`                            | false   | Hello, World                          |
 
 ## Database Schema
 
@@ -114,6 +118,37 @@ Response:
   }
 }
 ```
+
+
+### Multipart/Chunked Upload (for huge files)
+
+#### 1. Initiate upload:
+```bash
+curl -X POST http://localhost:3000/blob/initiate \
+  -H "Content-Type: application/json" \
+  -d '{"bucket":"bigfiles","filename":"video_20tb.mkv","size":21990232555520}'
+# Response: { "uploadId": "abc123" }
+```
+
+#### 2. Upload each chunk:
+```bash
+curl -X PUT http://localhost:3000/blob/abc123/chunk \
+  -H "Content-Range: bytes 0-1073741823/21990232555520" \
+  --data-binary "@chunk_0.bin"
+# Repeat for each chunk, adjusting Content-Range and file
+```
+
+#### 3. (Optional) Check status:
+```bash
+curl http://localhost:3000/blob/abc123/status
+```
+
+#### 4. Complete upload:
+```bash
+curl -X POST http://localhost:3000/blob/abc123/complete
+```
+
+After completion, the file is available as a normal blob for download and management.
 
 ### GET `/blob`
 
