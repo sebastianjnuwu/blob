@@ -1,4 +1,5 @@
 storage/
+vendor/
 tmp/
 logs/
 .env
