@@ -21,6 +21,14 @@ import (
 
 // POST /blob/{uploadId}/complete
 func CompleteUpload(w http.ResponseWriter, r *http.Request) {
+	// Recebe hash final esperado do cliente
+	finalHashHeader := r.Header.Get("X-Final-Hash")
+	if finalHashHeader == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Missing X-Final-Hash header"})
+		return
+	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 {
 		w.Header().Set("Content-Type", "application/json")
@@ -165,6 +173,13 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
+	if !strings.EqualFold(hash, finalHashHeader) {
+		fFinal.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Final file hash mismatch (integrity check failed)"})
+		return
+	}
 	fFinal.Close()
 
 	bucketPath := filepath.Join(storagePath, upload.Bucket)
