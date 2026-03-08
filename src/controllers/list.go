@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 )
 
@@ -56,6 +57,6 @@ func ListBlobsController(w http.ResponseWriter, r *http.Request) {
 		},
 		"blobs": blobs,
 	}); err != nil {
-		// Optionally log: fmt.Println("failed to encode list json:", err)
+		functions.Error("failed to encode list json: %v", err)
 	}
 }

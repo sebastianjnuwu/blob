@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 
 	"github.com/google/uuid"
@@ -18,7 +19,7 @@ func DeleteBlobController(w http.ResponseWriter, r *http.Request) {
 	if len(parts) < 3 || parts[2] == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode delete error json:", err)
+			functions.Error("failed to encode delete error json: %v", err)
 		}
 		return
 	}
@@ -27,7 +28,7 @@ func DeleteBlobController(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode delete error json:", err)
+			functions.Error("failed to encode delete error json: %v", err)
 		}
 		return
 	}
@@ -39,7 +40,7 @@ func DeleteBlobController(w http.ResponseWriter, r *http.Request) {
 	if db.Error != nil {
 		w.WriteHeader(http.StatusNotFound)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode delete error json:", err)
+			functions.Error("failed to encode delete error json: %v", err)
 		}
 		return
 	}
@@ -59,13 +60,13 @@ func DeleteBlobController(w http.ResponseWriter, r *http.Request) {
 	if result.RowsAffected == 0 {
 		w.WriteHeader(http.StatusNotFound)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode delete error json:", err)
+			functions.Error("failed to encode delete error json: %v", err)
 		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"message": "Blob deleted successfully"}); err != nil {
-		// Optionally log: fmt.Println("failed to encode delete success json:", err)
+		functions.Error("failed to encode delete success json: %v", err)
 	}
 }

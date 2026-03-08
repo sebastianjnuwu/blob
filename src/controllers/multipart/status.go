@@ -2,6 +2,7 @@ package multipart
 
 import (
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 	"encoding/json"
 	"net/http"
@@ -33,5 +34,7 @@ func UploadStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden: not your upload", http.StatusForbidden)
 		return
 	}
-	json.NewEncoder(w).Encode(upload)
+	if err := json.NewEncoder(w).Encode(upload); err != nil {
+		functions.Error("failed to encode upload status json: %v", err)
+	}
 }

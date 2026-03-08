@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 
 	"github.com/google/uuid"
@@ -21,7 +22,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	if len(parts) < 3 || parts[2] == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing blob id"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			functions.Error("failed to encode edit error json: %v", err)
 		}
 		return
 	}
@@ -30,7 +31,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid blob id"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			functions.Error("failed to encode edit error json: %v", err)
 		}
 		return
 	}
@@ -40,7 +41,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	if result.Error != nil {
 		w.WriteHeader(http.StatusNotFound)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Blob not found"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			functions.Error("failed to encode edit error json: %v", err)
 		}
 		return
 	}
@@ -54,7 +55,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON body"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			functions.Error("failed to encode edit error json: %v", err)
 		}
 		return
 	}
@@ -64,7 +65,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Metadata must be valid JSON"}); err != nil {
-				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+				functions.Error("failed to encode edit error json: %v", err)
 			}
 			return
 		}
@@ -78,14 +79,14 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if err := json.NewEncoder(w).Encode(map[string]string{"error": "expires_at must be RFC3339 date"}); err != nil {
-				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+				functions.Error("failed to encode edit error json: %v", err)
 			}
 			return
 		}
 		if t.Before(time.Now().UTC()) {
 			w.WriteHeader(http.StatusBadRequest)
 			if err := json.NewEncoder(w).Encode(map[string]string{"error": "expires_at cannot be in the past"}); err != nil {
-				// Optionally log: fmt.Println("failed to encode edit error json:", err)
+				functions.Error("failed to encode edit error json: %v", err)
 			}
 			return
 		}
@@ -110,7 +111,7 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 		hashInput += salt
 		sha := sha256.New()
 		if _, err := sha.Write([]byte(hashInput)); err != nil {
-			// Optionally log: fmt.Println("failed to write hash input:", err)
+			functions.Error("failed to write hash input: %v", err)
 		}
 		blob.Hash = hex.EncodeToString(sha.Sum(nil))
 	}
@@ -118,13 +119,13 @@ func EditBlobController(w http.ResponseWriter, r *http.Request) {
 	if err := database.DB.Save(&blob).Error; err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update blob"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode edit error json:", err)
+			functions.Error("failed to encode edit error json: %v", err)
 		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(blob); err != nil {
-		// Optionally log: fmt.Println("failed to encode edit blob json:", err)
+		functions.Error("failed to encode edit blob json: %v", err)
 	}
 }

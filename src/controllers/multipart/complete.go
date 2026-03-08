@@ -2,6 +2,7 @@ package multipart
 
 import (
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,7 +26,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing uploadId"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (missing uploadId):", err)
+			functions.Error("failed to encode error json (missing uploadId): %v", err)
 		}
 		return
 	}
@@ -37,7 +38,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing or invalid X-User-ID header"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (missing user id):", err)
+			functions.Error("failed to encode error json (missing user id): %v", err)
 		}
 		return
 	}
@@ -47,7 +48,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid uploadId"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (invalid uploadId):", err)
+			functions.Error("failed to encode error json (invalid uploadId): %v", err)
 		}
 		return
 	}
@@ -56,7 +57,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden: not your upload"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (forbidden):", err)
+			functions.Error("failed to encode error json (forbidden): %v", err)
 		}
 		return
 	}
@@ -65,7 +66,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Upload already completed"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (already completed):", err)
+			functions.Error("failed to encode error json (already completed): %v", err)
 		}
 		return
 	}
@@ -75,7 +76,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "No chunks uploaded"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (no chunks):", err)
+			functions.Error("failed to encode error json (no chunks): %v", err)
 		}
 		return
 	}
@@ -90,7 +91,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create temp directory"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (temp dir):", err)
+			functions.Error("failed to encode error json (temp dir): %v", err)
 		}
 		return
 	}
@@ -101,7 +102,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create final file"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (final file):", err)
+			functions.Error("failed to encode error json (final file): %v", err)
 		}
 		return
 	}
@@ -114,7 +115,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing chunk"}); err != nil {
-				// Optionally log: fmt.Println("failed to encode error json (missing chunk):", err)
+				functions.Error("failed to encode error json (missing chunk): %v", err)
 			}
 			return
 		}
@@ -124,7 +125,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to write chunk"}); err != nil {
-				// Optionally log: fmt.Println("failed to encode error json (write chunk):", err)
+				functions.Error("failed to encode error json (write chunk): %v", err)
 			}
 			return
 		}
@@ -137,7 +138,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to seek final file"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (seek final file):", err)
+			functions.Error("failed to encode error json (seek final file): %v", err)
 		}
 		return
 	}
@@ -149,7 +150,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to seek final file (2)"}); err != nil {
-			// Optionally log: fmt.Println("failed to encode error json (seek final file 2):", err)
+			functions.Error("failed to encode error json (seek final file 2): %v", err)
 		}
 		return
 	}
@@ -158,7 +159,9 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		fFinal.Close()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to hash file"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to hash file"}); err != nil {
+			functions.Error("failed to encode error json (hash file): %v", err)
+		}
 		return
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
@@ -168,7 +171,9 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if err := os.MkdirAll(bucketPath, 0755); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create bucket directory"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create bucket directory"}); err != nil {
+			functions.Error("failed to encode error json (bucket dir): %v", err)
+		}
 		return
 	}
 
@@ -191,7 +196,9 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid UUID"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid UUID"}); err != nil {
+			functions.Error("failed to encode error json (invalid uuid): %v", err)
+		}
 		return
 	}
 
@@ -209,7 +216,9 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if err := database.DB.Create(&bl).Error; err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to save blob"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to save blob"}); err != nil {
+			functions.Error("failed to encode error json (save blob): %v", err)
+		}
 		return
 	}
 
@@ -217,12 +226,14 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if err := os.RemoveAll(tmpDir); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to remove temp directory"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to remove temp directory"}); err != nil {
+			functions.Error("failed to encode error json (remove temp dir): %v", err)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":         bl.ID.String(),
 		"bucket":     bl.Bucket,
 		"filename":   bl.Filename,
@@ -230,5 +241,7 @@ func CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		"hash":       bl.Hash,
 		"created_at": bl.CreatedAt,
 		"updated_at": bl.UpdatedAt,
-	})
+	}); err != nil {
+		functions.Error("failed to encode complete upload json: %v", err)
+	}
 }

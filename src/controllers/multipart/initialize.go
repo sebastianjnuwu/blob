@@ -2,6 +2,7 @@ package multipart
 
 import (
 	"blob/src/database"
+	"blob/src/functions"
 	"blob/src/models"
 	"encoding/json"
 	"net/http"
@@ -51,6 +52,6 @@ func InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := json.NewEncoder(w).Encode(map[string]string{"uploadId": upload.ID.String()}); err != nil {
-		// log.Println("failed to encode uploadId json:", err)
+		functions.Error("failed to encode uploadId json: %v", err)
 	}
 }
