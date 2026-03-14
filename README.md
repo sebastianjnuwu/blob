@@ -56,6 +56,7 @@ ghcr.io/sebastianjnuwu/blob:latest
 | POST   | `/blob/:id`                    | true    | Edit blob fields                      |
 | GET    | `/blob/:id/download`           | false   | Download blob file                    |
 | DELETE | `/blob/:id`                    | true    | Delete blob                           |
+| GET    | `/metrics`                     | true    | Storage and usage metrics (JSON)        |
 | GET    | `/health`                      | false   | Healthcheck                           |
 | GET    | `/`                            | false   | Hello, World                          |
 
@@ -105,6 +106,56 @@ Response:
 ```json
 {
   "status": "ok"
+}
+```
+
+### GET `/metrics`
+
+#### Example
+
+```bash
+curl -X GET http://localhost:3000/metrics \
+  -H "Authorization: Bearer change-me-with-32-characters-or-more"
+```
+
+Response:
+```json
+{
+    "buckets": [
+        {
+            "blobs": 9,
+            "name": "testbucket",
+            "size": "8.32 MB",
+            "visibility": {
+                "private": 9,
+                "public": 0
+            }
+        }
+    ],
+    "last_upload": {
+        "bucket": "testbucket",
+        "created_at": "2026-03-08T09:59:47.420216-03:00",
+        "filename": "video.mp4",
+        "id": "33fc6434-ab9c-43ad-b7f6-63bb7f92704c"
+    },
+    "summary": {
+        "average_size": "946.49 KB",
+        "max_size": "946.49 KB",
+        "min_size": "946.49 KB",
+        "multipart_completed": 4,
+        "storage_free": "1015.68 MB",
+        "storage_max": "1.00 GB",
+        "total_blobs": 9,
+        "total_downloads": 0,
+        "total_size": "8.32 MB"
+    },
+    "types": [
+        {
+            "count": 9,
+            "mime": "video/mp4",
+            "size": "8.32 MB"
+        }
+    ]
 }
 ```
 

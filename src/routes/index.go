@@ -83,10 +83,13 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 	// Custom handler for /blob/* to support dynamic download route
 	mux.HandleFunc("/blob/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+
+		// GET /blob/{id}/download (public)
 		if strings.HasSuffix(path, "/download") || strings.HasSuffix(path, "/download/") {
 			controllers.DownloadBlobController(w, r)
 			return
 		}
+
 		// fallback: method not allowed or not found
 		functions.WriteJSONMethodNotAllowed(w)
 	})
@@ -101,6 +104,12 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 	mux.Handle(
 		"DELETE /blob/{id}",
 		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.DeleteBlobController))),
+	)
+
+	// GET /metrics (private)
+	mux.Handle(
+		"GET /metrics",
+		limiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(controllers.BlobMetricsController))),
 	)
 
 }
