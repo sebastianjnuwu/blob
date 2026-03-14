@@ -11,10 +11,8 @@ import (
 
 func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 
-	// Default handler for undefined routes
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		functions.WriteJSONMethodNotAllowed(w)
-	})
+	// GET / (public)
+	mux.HandleFunc("/", GETHandler)
 
 	// GET /health (public)
 	mux.Handle(
