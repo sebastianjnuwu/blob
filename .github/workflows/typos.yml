@@ -15,6 +15,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Install typos
-        uses: crate-ci/typos@v1.21.0
+        uses: taiki-e/install-action@v2
+        with:
+          tool: typos
       - name: Run typos
         run: typos .
