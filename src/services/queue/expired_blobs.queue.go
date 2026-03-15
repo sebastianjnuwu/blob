@@ -45,14 +45,16 @@ func StartCleanupScheduler() {
 			functions.Warn("[QUEUE] Invalid BLOB_EXPIRED_CLEANUP_INTERVAL '%s', using default 24h", v)
 		}
 	}
-	functions.Info("[QUEUE] Expired blob scheduler started (interval: %v)", interval)
+
+	retention := interval
+	functions.Info("[QUEUE] Expired blob scheduler started (interval: %v, retention: %v)", interval, retention)
 	go func() {
 		for {
 			if services.AsynqClient == nil {
 				functions.Error("[QUEUE ERROR] AsynqClient is nil! Did you call InitAsynq() first?")
 				return
 			}
-			task := asynq.NewTask(TypeDeleteExpiredBlobs, nil)
+			task := asynq.NewTask(TypeDeleteExpiredBlobs, nil, asynq.Retention(retention))
 			_, err := services.AsynqClient.Enqueue(task)
 			if err != nil {
 				functions.Error("[QUEUE ERROR] Failed to enqueue blob expired task: %v", err)

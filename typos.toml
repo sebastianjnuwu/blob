@@ -1,0 +1,34 @@
+[files]
+extend-exclude = [".git/", ".github/", "vendor/", "go.mod", "go.sum"]
+ignore-hidden = false
+
+[default]
+extend-ignore-re = [
+    "[0-9A-Za-z/+=]{64}",
+    "ERRO:",
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$", # ignore line
+]
+
+[default.extend-words]
+"encrypter" = "encrypter"
+"kms" = "kms"
+"requestor" = "requestor"
+
+[default.extend-identifiers]
+"HashiCorp" = "HashiCorp"
+
+[type.go.extend-identifiers]
+"bui" = "bui"
+"dm2nd" = "dm2nd"
+"ot" = "ot"
+"ParseND" = "ParseND"
+"ParseNDStream" = "ParseNDStream"
+"pn" = "pn"
+"TestGetPartialObjectMisAligned" = "TestGetPartialObjectMisAligned"
+"thr" = "thr"
+"toi" = "toi"
+
+[type.go]
+extend-ignore-identifiers-re = [
+    "[tT]yp[0-9]*",
+]

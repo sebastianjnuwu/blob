@@ -35,7 +35,7 @@ func UploadStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden: not your upload", http.StatusForbidden)
 		return
 	}
-	// Calcular missing_chunks
+	// Calculate missing_chunks
 	var chunksDone []int
 	_ = json.Unmarshal(upload.ChunksDone, &chunksDone)
 	chunkMap := make(map[int]bool)

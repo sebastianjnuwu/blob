@@ -21,7 +21,7 @@ import (
 
 // POST /blob/{uploadId}/complete
 func CompleteUpload(w http.ResponseWriter, r *http.Request) {
-	// Recebe hash final esperado do cliente
+	// Receives expected final hash from client
 	finalHashHeader := r.Header.Get("X-Final-Hash")
 	if finalHashHeader == "" {
 		w.Header().Set("Content-Type", "application/json")

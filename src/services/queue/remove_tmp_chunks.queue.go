@@ -20,7 +20,6 @@ func handleRemoveTmpChunks(ctx context.Context, t *asynq.Task) error {
 	return removeOldTmpChunks()
 }
 
-// Remove temp chunk files and DB records for unfinished uploads older than the threshold
 func removeOldTmpChunks() error {
 	threshold := 24 * time.Hour
 	if v := os.Getenv("BLOB_TMP_CLEANUP_THRESHOLD"); v != "" {
@@ -59,7 +58,7 @@ func removeOldTmpChunks() error {
 				functions.Info("[TMP CLEANUP] Removed %s", realTmpDir)
 			}
 		}
-		// Double-check completed field before deleting
+
 		if !upload.Completed {
 			database.DB.Delete(&upload)
 			functions.Info("[TMP CLEANUP] Deleted DB record for upload %s", upload.ID.String())
@@ -79,10 +78,12 @@ func StartTmpCleanupScheduler() {
 			functions.Warn("[TMP CLEANUP] Invalid BLOB_TMP_CLEANUP_INTERVAL '%s': %v (using default 24h)", v, err)
 		}
 	}
-	functions.Info("[QUEUE] Tmp chunk cleanup scheduler started (interval: %v)", interval)
+
+	retention := interval
+	functions.Info("[QUEUE] Tmp chunk cleanup scheduler started (interval: %v, retention: %v)", interval, retention)
 	go func() {
 		for {
-			task := asynq.NewTask(TypeRemoveTmpChunks, nil)
+			task := asynq.NewTask(TypeRemoveTmpChunks, nil, asynq.Retention(retention))
 			if services.AsynqClient != nil {
 				_, err := services.AsynqClient.Enqueue(task)
 				if err != nil {

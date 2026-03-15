@@ -103,7 +103,7 @@ func UploadChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calcular hash SHA256 enquanto grava no arquivo, sem carregar tudo na memória
+	// Calculate SHA256 hash while writing to file, without loading everything into memory
 	limitedReader := io.LimitReader(r.Body, maxChunkSize+1)
 	hasher := sha256.New()
 	tee := io.TeeReader(limitedReader, hasher)

@@ -9,6 +9,7 @@ help:
 	@echo "  make format   - Format code (go fmt)"
 	@echo "  make test     - Run tests"
 	@echo "  make build    - Build main binary"
+	@echo "  make typos    - Check for common typos in the codebase (requires 'typos' tool)"
 	@echo "  make run      - Run the main application"
 	@echo "  make clean    - Remove binaries and cache"
 	@echo "  make help     - Show this message"
@@ -43,6 +44,10 @@ test:
 ## Build main binary
 build:
 	go build -o blob-server main.go
+
+## Check for common typos in the codebase (requires 'typos' tool)
+typos:
+    typos --config ./typos.toml
 
 ## Run the main application
 run:
