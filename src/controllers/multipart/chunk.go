@@ -24,7 +24,12 @@ func UploadChunk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing uploadId", http.StatusBadRequest)
 		return
 	}
-	uploadId := parts[2]
+	uploadUUID, err := uuid.Parse(parts[2])
+	if err != nil {
+		http.Error(w, "Invalid uploadId", http.StatusBadRequest)
+		return
+	}
+	uploadId := uploadUUID.String()
 	userIDStr := r.Header.Get("X-User-ID")
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
@@ -66,14 +71,18 @@ func UploadChunk(w http.ResponseWriter, r *http.Request) {
 		storagePath = "storage/uploads"
 	}
 	tmpDir := filepath.Join(storagePath, "tmp", uploadId)
-	if err := os.MkdirAll(tmpDir, 0750); err != nil {
+	realTmpDir, err := ensurePathWithinBase(storagePath, tmpDir)
+	if err != nil {
+		http.Error(w, "Invalid temp path", http.StatusBadRequest)
+		return
+	}
+	if err := os.MkdirAll(realTmpDir, 0750); err != nil {
 		http.Error(w, "Failed to create temp directory", http.StatusInternalServerError)
 		return
 	}
-	chunkPath := filepath.Join(tmpDir, fmt.Sprintf("chunk_%d", chunkIdx))
-	realChunkPath, err := filepath.Abs(chunkPath)
-	realTmpDir, err2 := filepath.Abs(tmpDir)
-	if err != nil || err2 != nil || !strings.HasPrefix(realChunkPath, realTmpDir) {
+	chunkPath := filepath.Join(realTmpDir, fmt.Sprintf("chunk_%d", chunkIdx))
+	realChunkPath, err := ensurePathWithinBase(realTmpDir, chunkPath)
+	if err != nil {
 		http.Error(w, "Invalid chunk path", http.StatusBadRequest)
 		return
 	}

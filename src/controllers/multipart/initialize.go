@@ -24,6 +24,10 @@ func InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
+	if !validateBucketName(req.Bucket) {
+		http.Error(w, "Invalid bucket name", http.StatusBadRequest)
+		return
+	}
 	userIDStr := r.Header.Get("X-User-ID")
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
