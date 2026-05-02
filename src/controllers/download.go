@@ -14,15 +14,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// DownloadBlobController handles GET /blob/{id}/download
-func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
+func serveBlobFile(w http.ResponseWriter, r *http.Request, disposition string) {
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 
-	if len(parts) < 3 || parts[0] != "blob" || parts[2] != "download" {
+	if len(parts) < 3 || parts[0] != "blob" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		if _, err := w.Write([]byte(`{"error":"Invalid download URL"}`)); err != nil {
+		if _, err := w.Write([]byte(`{"error":"Invalid blob URL"}`)); err != nil {
 			functions.Error("failed to write error: %v", err)
 		}
 		return
@@ -113,7 +112,7 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 	database.DB.Model(&blob).Update("download_count", blob.DownloadCount+1)
 
 	w.Header().Set("Content-Type", blob.Mime)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+blob.Filename+`"`)
+	w.Header().Set("Content-Disposition", disposition+`; filename="`+blob.Filename+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
 
 	http.ServeContent(
@@ -123,4 +122,19 @@ func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
 		info.ModTime(),
 		file,
 	)
+}
+
+// DownloadBlobController handles GET /blob/{id}/download
+func DownloadBlobController(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[2] != "download" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		if _, err := w.Write([]byte(`{"error":"Invalid download URL"}`)); err != nil {
+			functions.Error("failed to write error: %v", err)
+		}
+		return
+	}
+
+	serveBlobFile(w, r, "attachment")
 }

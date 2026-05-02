@@ -55,6 +55,7 @@ ghcr.io/sebastianjnuwu/blob:latest
 | GET    | `/blob/:id`                    | true    | Get blob metadata                     |
 | POST   | `/blob/:id`                    | true    | Edit blob fields                      |
 | GET    | `/blob/:id/download`           | false   | Download blob file                    |
+| GET    | `/blob/:id/view`               | false   | View blob inline (opens in browser)   |
 | DELETE | `/blob/:id`                    | true    | Delete blob                           |
 | GET    | `/metrics`                     | true    | Storage and usage metrics (JSON)        |
 | GET    | `/health`                      | false   | Healthcheck                           |

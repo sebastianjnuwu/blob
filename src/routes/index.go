@@ -88,6 +88,12 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 			return
 		}
 
+		// GET /blob/{id}/view (public)
+		if strings.HasSuffix(path, "/view") || strings.HasSuffix(path, "/view/") {
+			controllers.ViewBlobController(w, r)
+			return
+		}
+
 		// fallback: method not allowed or not found
 		functions.WriteJSONMethodNotAllowed(w)
 	})
