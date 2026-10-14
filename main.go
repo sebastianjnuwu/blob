@@ -75,7 +75,7 @@ func main() {
 	corsOpts.AllowCredentials = len(corsOpts.AllowedOrigins) == 1 && corsOpts.AllowedOrigins[0] != "*"
 	handler := cors.New(corsOpts).Handler(mux)
 
-	logger.Server.Info("Server running at: http://%s:%s", cfg.Host, cfg.Port)
+	logger.Server.Info("Server running at: <cyan>http://%s:%s</>.", cfg.Host, cfg.Port)
 	srv := &http.Server{
 		Addr:         cfg.Host + ":" + cfg.Port,
 		Handler:      handler,
