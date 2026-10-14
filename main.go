@@ -1,10 +1,10 @@
 package main
 
 import (
+	"blob/cli"
 	"blob/src/api/middleware"
 	"blob/src/api/routes"
 	"blob/src/auth"
-	"blob/cli"
 	"blob/src/config"
 	"blob/src/database"
 	"blob/src/lib/logger"

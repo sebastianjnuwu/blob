@@ -49,6 +49,23 @@ func Verify(bearerToken string) *APIKey {
 	return &APIKey{Token: bearerToken, Perms: parsePermissions(row.Scopes)}
 }
 
+// S3Credentials returns the plaintext secret and permissions for an access
+// key ID, for future SigV4 verification. The secret must stay server-side.
+func S3Credentials(accessKeyID string) (string, map[Permission]bool, bool) {
+	if accessKeyID == "" || database.DB == nil {
+		return "", nil, false
+	}
+	var row models.ApiKey
+	if err := database.DB.Where("access_key_id = ? AND active = ?", accessKeyID, true).First(&row).Error; err != nil {
+		return "", nil, false
+	}
+	if row.Secret == "" {
+		return "", nil, false
+	}
+	return row.Secret, parsePermissions(row.Scopes), true
+}
+
+// API keys are never auto-generated: create them with `blob admin create`.
 // EnsureBootstrap creates the HMAC secret for signed URLs when missing.
 // API keys are never auto-generated: create them with `blob admin create`.
 func EnsureBootstrap() {

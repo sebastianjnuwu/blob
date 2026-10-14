@@ -10,7 +10,8 @@ The format follows Keep a Changelog principles, organized by date.
 - Master token legado (`BLOB_TOKEN_SECRET`): auth agora é só `BLOB_API_KEYS` com escopos; token do website migrado para entrada `read,write`. `BLOB_SIGNED_URL_SECRET` (HMAC) inalterado.
 
 ### Added
-- Chaves de API no banco (`api_keys`: hash sha256, escopos, revoke) + segredo HMAC persistido (`settings`): `MAIL_ADMIN` rotula chaves criadas via CLI (`blob admin create --label X --scopos...`, mostra o token uma vez; `list`/`revoke`). Sem rotas HTTP de admin e sem auto-geração no boot (só o segredo HMAC é criado sozinho). Remove `BLOB_API_KEYS`/`BLOB_SIGNED_URL_SECRET` do env.
+- Chaves de API no banco (`api_keys`: hash sha256, escopos, revoke) + segredo HMAC persistido (`settings`): `MAIL_ADMIN` rotula chaves criadas via CLI (`blob admin create`, mostra o token uma vez; `list`/`revoke`). Sem rotas HTTP de admin e sem auto-geração no boot. Remove `BLOB_API_KEYS`/`BLOB_SIGNED_URL_SECRET` do env.
+- Credenciais estilo S3 (`access_key_id` + `secret`, colunas novas em `api_keys`): `blob admin create-s3 --label X --scopes ...` (importa com `--access-key/--secret`); `list` exibe o access key; segredo fica no servidor para futura verificação SigV4. Bearer atual inalterado.
 
 ### Changed
 - Logger unificado com o da API (`src/lib/logger`): tags de cor (`<red>`, `<cyan>`...), categorias (`Server`, `Database`, `Environment`, `HTTP`, `Queue`), helper `StatusCode`. Chamadas migradas de `functions.Info/Warn/Error/Debug` (16 arquivos + `main.go`); `src/functions/logger.go` removido.
