@@ -53,7 +53,7 @@ func getenvInt(key string, fallback int) int {
 		if parsed, err := strconv.Atoi(v); err == nil {
 			return parsed
 		}
-		logger.Environment.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -63,7 +63,7 @@ func getenvInt64(key string, fallback int64) int64 {
 		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return parsed
 		}
-		logger.Environment.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -73,7 +73,7 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
 		}
-		logger.Environment.Warn("[CONFIG] Invalid duration for %s: %s (using default %v)", key, v, fallback)
+		logger.Environment.Warn("Invalid duration for %s: %s (using default %v)", key, v, fallback)
 	}
 	return fallback
 }
@@ -83,7 +83,7 @@ func getenvBool(key string, fallback bool) bool {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
 		}
-		logger.Environment.Warn("[CONFIG] Invalid boolean for %s: %s (using default %t)", key, v, fallback)
+		logger.Environment.Warn("Invalid boolean for %s: %s (using default %t)", key, v, fallback)
 	}
 	return fallback
 }

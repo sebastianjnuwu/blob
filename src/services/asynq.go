@@ -32,5 +32,5 @@ func InitAsynq() {
 		},
 	)
 
-	logger.Queue.Info("[ASYNQ] Initialized successfully.")
+	logger.Queue.Info("Initialized successfully.")
 }
