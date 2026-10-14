@@ -19,5 +19,3 @@ S3_ACCESS_KEY_ID=<access> S3_SECRET_ACCESS_KEY=<secret> node index.js
 ```
 
 O script faz `ListBuckets → PutObject → ListObjectsV2 → GetObject` e confere os bytes.
-
-`sign-test.cjs` gera vetores de assinatura (usado no teste Go `sigv4_smithy_test.go`).
