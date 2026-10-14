@@ -83,22 +83,11 @@ func matchKey(bearer string) *APIKey {
 	return nil
 }
 
-// masterToken is the legacy shared secret; it grants full access.
-func masterToken() string {
-	if config.Env == nil {
-		return ""
-	}
-	return config.Env.TokenSecret
-}
-
-// Verify returns the API key when the bearer token is valid (either the master
-// secret or a configured API key). Returns nil otherwise.
+// Verify returns the API key when the bearer token matches a configured key.
+// Returns nil otherwise.
 func Verify(bearerToken string) *APIKey {
 	if bearerToken == "" {
 		return nil
-	}
-	if masterToken() != "" && subtle.ConstantTimeCompare([]byte(bearerToken), []byte(masterToken())) == 1 {
-		return &APIKey{Token: bearerToken, Perms: defaultPermissions()}
 	}
 	return matchKey(bearerToken)
 }

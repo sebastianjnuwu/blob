@@ -6,6 +6,9 @@ The format follows Keep a Changelog principles, organized by date.
 
 ## [2026-10-14]
 
+### Removed
+- Master token legado (`BLOB_TOKEN_SECRET`): auth agora é só `BLOB_API_KEYS` com escopos; token do website migrado para entrada `read,write`. `BLOB_SIGNED_URL_SECRET` (HMAC) inalterado.
+
 ### Changed
 - Logger unificado com o da API (`src/lib/logger`): tags de cor (`<red>`, `<cyan>`...), categorias (`Server`, `Database`, `Environment`, `HTTP`, `Queue`), helper `StatusCode`. Chamadas migradas de `functions.Info/Warn/Error/Debug` (16 arquivos + `main.go`); `src/functions/logger.go` removido.
 

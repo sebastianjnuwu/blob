@@ -39,14 +39,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.TokenSecret == "change-me-with-32-characters-or-more" || (cfg.TokenSecret != "" && len(cfg.TokenSecret) < 32) {
-		logger.Environment.Error("BLOB_TOKEN_SECRET is insecure: use a unique secret of at least 32 characters, or leave it empty to disable the master token and rely on BLOB_API_KEYS only.")
-		os.Exit(1)
-	}
-	if cfg.TokenSecret == "" {
-		logger.Environment.Warn("BLOB_TOKEN_SECRET is empty: master token authentication is disabled, only BLOB_API_KEYS can authenticate.")
-	}
-
 	services.InitAsynq()
 	services.InitBlobService()
 	services.InitMultipartService()
