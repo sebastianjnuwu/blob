@@ -37,7 +37,7 @@ func Postgres() {
 		return
 	}
 
-	if err := DB.AutoMigrate(&models.Blob{}, &models.MultipartUpload{}); err != nil {
+	if err := DB.AutoMigrate(&models.Blob{}, &models.MultipartUpload{}, &models.ApiKey{}, &models.Setting{}); err != nil {
 		logger.Database.Error("AutoMigrate: %v", err)
 		return
 	}

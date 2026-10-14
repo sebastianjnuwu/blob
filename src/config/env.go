@@ -17,8 +17,7 @@ type Config struct {
 	DatabaseURL            string
 	RedisURL               string
 	StoragePath            string
-	APIKeys                string
-	SignedURLSecret        string
+	AdminEmail             string
 	CORSOrigins            string
 	TrustProxy             bool
 	PublicURL              string
@@ -95,8 +94,7 @@ func Load() *Config {
 		DatabaseURL:            getenv("BLOB_DATABASE_URL", ""),
 		RedisURL:               getenv("REDIS_URL", ""),
 		StoragePath:            getenv("BLOB_STORAGE_PATH", "storage/uploads"),
-		APIKeys:                getenv("BLOB_API_KEYS", ""),
-		SignedURLSecret:        getenv("BLOB_SIGNED_URL_SECRET", ""),
+		AdminEmail:             getenv("MAIL_ADMIN", ""),
 		CORSOrigins:            getenv("BLOB_CORS_ORIGINS", "*"),
 		TrustProxy:             getenvBool("BLOB_TRUST_PROXY", false),
 		PublicURL:              getenv("BLOB_PUBLIC_URL", ""),

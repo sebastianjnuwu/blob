@@ -17,7 +17,7 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(header[7:])
 }
 
-// AuthMiddleware requires a valid bearer token (master secret or API key).
+// AuthMiddleware requires a valid bearer token (admin or API key).
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := auth.Verify(bearerToken(r))

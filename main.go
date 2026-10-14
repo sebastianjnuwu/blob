@@ -3,6 +3,7 @@ package main
 import (
 	"blob/src/api/middleware"
 	"blob/src/api/routes"
+	"blob/src/auth"
 	"blob/src/config"
 	"blob/src/database"
 	"blob/src/lib/logger"
@@ -10,7 +11,6 @@ import (
 	queue "blob/src/services/queue"
 	"blob/src/version"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -34,10 +34,7 @@ func main() {
 	cfg := config.Load()
 	version.V = Version
 
-	if cfg.SignedURLSecret == "" || len(cfg.SignedURLSecret) < 16 {
-		logger.Environment.Error("BLOB_SIGNED_URL_SECRET is required (at least 16 characters). Signed URLs are disabled until it is set.")
-		os.Exit(1)
-	}
+	auth.EnsureBootstrap()
 
 	services.InitAsynq()
 	services.InitBlobService()

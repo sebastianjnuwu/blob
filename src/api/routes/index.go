@@ -140,4 +140,25 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		methodHandler("GET", limiter.Middleware(middleware.RequirePermission(http.HandlerFunc(controllers.BlobMetricsController), auth.PermRead))),
 	)
 
+	// GET /admin/keys + POST /admin/keys (admin only)
+	mux.Handle("/admin/keys", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := limiter.Middleware(middleware.RequirePermission(http.HandlerFunc(controllers.AdminListKeys), auth.PermAdmin))
+		if r.Method == "POST" {
+			h = limiter.Middleware(middleware.RequirePermission(http.HandlerFunc(controllers.AdminCreateKey), auth.PermAdmin))
+		} else if r.Method != "GET" {
+			functions.WriteJSONMethodNotAllowed(w)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+
+	// DELETE /admin/keys/{id} (admin only)
+	mux.Handle("/admin/keys/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "DELETE" {
+			functions.WriteJSONMethodNotAllowed(w)
+			return
+		}
+		limiter.Middleware(middleware.RequirePermission(http.HandlerFunc(controllers.AdminRevokeKey), auth.PermAdmin)).ServeHTTP(w, r)
+	}))
+
 }
