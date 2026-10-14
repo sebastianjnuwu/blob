@@ -6,3 +6,5 @@ bin/
 *.exe
 .env
 .env.production
+
+node_modules/
