@@ -43,7 +43,7 @@ func Verify(bearerToken string) *APIKey {
 	if err := database.DB.Where("token_hash = ? AND active = ?", want, true).First(&row).Error; err != nil {
 		return nil
 	}
-	if subtle.ConstantTimeCompare([]byte(row.TokenHash), []byte(want)) != 1 {
+	if row.TokenHash == nil || subtle.ConstantTimeCompare([]byte(*row.TokenHash), []byte(want)) != 1 {
 		return nil
 	}
 	return &APIKey{Token: bearerToken, Perms: parsePermissions(row.Scopes)}

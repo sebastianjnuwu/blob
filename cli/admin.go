@@ -84,7 +84,9 @@ func adminCreate(args []string) int {
 		fmt.Fprintln(os.Stderr, "admin create: --token must be at least 32 characters")
 		return 2
 	}
-	row := models.ApiKey{Label: *label, TokenHash: auth.HashToken(secret), Scopes: strings.Join(parts, ","), Active: true}
+	row := models.ApiKey{Label: *label, Scopes: strings.Join(parts, ","), Active: true}
+	h := auth.HashToken(secret)
+	row.TokenHash = &h
 	if err := database.DB.Create(&row).Error; err != nil {
 		fmt.Fprintln(os.Stderr, "admin create:", err)
 		return 1
@@ -146,7 +148,9 @@ func adminCreateS3(args []string) int {
 		fmt.Fprintln(os.Stderr, "admin create-s3: --secret must be at least 32 characters")
 		return 2
 	}
-	row := models.ApiKey{Label: *label, AccessKeyID: id, Secret: key, Scopes: strings.Join(parts, ","), Active: true}
+	row := models.ApiKey{Label: *label, Scopes: strings.Join(parts, ","), Active: true}
+	row.AccessKeyID = &id
+	row.Secret = key
 	if err := database.DB.Create(&row).Error; err != nil {
 		fmt.Fprintln(os.Stderr, "admin create-s3:", err)
 		return 1
@@ -178,7 +182,11 @@ func adminList() int {
 		return 1
 	}
 	for _, k := range rows {
-		fmt.Printf("%s  %-24s  %-16s  %-20s  active=%t\n", k.ID, k.Label, k.Scopes, k.AccessKeyID, k.Active)
+		akid := ""
+		if k.AccessKeyID != nil {
+			akid = *k.AccessKeyID
+		}
+		fmt.Printf("%s  %-24s  %-16s  %-20s  active=%t\n", k.ID, k.Label, k.Scopes, akid, k.Active)
 	}
 	return 0
 }

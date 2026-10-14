@@ -17,10 +17,13 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(header[7:])
 }
 
-// AuthMiddleware requires a valid bearer token (admin or API key).
+// AuthMiddleware requires a valid credential: bearer token or SigV4 signature.
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := auth.Verify(bearerToken(r))
+		if key == nil {
+			key = auth.VerifyS3(r)
+		}
 		if key == nil {
 			functions.WriteJSONError(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -34,6 +37,9 @@ func AuthMiddleware(next http.Handler) http.Handler {
 func RequirePermission(next http.Handler, perms ...auth.Permission) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := auth.Verify(bearerToken(r))
+		if key == nil {
+			key = auth.VerifyS3(r)
+		}
 		if key == nil {
 			functions.WriteJSONError(w, "Unauthorized", http.StatusUnauthorized)
 			return

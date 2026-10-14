@@ -172,6 +172,16 @@ type ListResult struct {
 	Total    int64         `json:"total"`
 }
 
+// GetByBucketFilename returns the most recent live blob for an exact bucket+filename.
+func (s *BlobService) GetByBucketFilename(ctx context.Context, bucket, filename string) (*models.Blob, error) {
+	return s.repo.GetByBucketFilename(ctx, bucket, filename)
+}
+
+// Buckets lists distinct buckets with live objects.
+func (s *BlobService) Buckets(ctx context.Context) ([]repository.Bucket, error) {
+	return s.repo.Buckets(ctx)
+}
+
 // List returns a paginated, filtered list of blobs.
 func (s *BlobService) List(ctx context.Context, f repository.ListFilter) (*ListResult, error) {
 	blobs, total, err := s.repo.List(ctx, f)

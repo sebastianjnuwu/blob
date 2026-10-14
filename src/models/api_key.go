@@ -14,8 +14,8 @@ import (
 type ApiKey struct {
 	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	Label       string    `gorm:"type:text;not null" json:"label"`
-	TokenHash   string    `gorm:"type:text;uniqueIndex" json:"-"`
-	AccessKeyID string    `gorm:"type:text;uniqueIndex" json:"access_key_id,omitempty"`
+	TokenHash   *string   `gorm:"type:text;uniqueIndex" json:"-"`
+	AccessKeyID *string   `gorm:"type:text;uniqueIndex" json:"access_key_id,omitempty"`
 	Secret      string    `gorm:"type:text" json:"-"`
 	Scopes      string    `gorm:"type:text;not null" json:"scopes"`
 	Active      bool      `gorm:"type:boolean;not null;default:true" json:"active"`
