@@ -42,6 +42,31 @@ ghcr.io/sebastianjnuwu/blob:latest
 * `--name blob`
   Gives the container an easy name for management.
 
+## Authentication
+
+There is no master token and no secret in env. API keys live in the database
+and are managed with the CLI (shown once at creation, only hashes are stored):
+
+```bash
+# bearer key
+go run . admin create --label website --scopes read,write
+# S3-style credentials (access key + secret)
+go run . admin create-s3 --label backup --scopes read,write
+# list / revoke
+go run . admin list
+go run . admin revoke <id>
+```
+
+Private routes accept a bearer token or an AWS SigV4 signature:
+
+```bash
+curl -H "Authorization: Bearer <api-key>" http://localhost:3000/blob
+```
+
+The server is S3-compatible: standard AWS SDKs work against it (SigV4 +
+`PUT/GET/DELETE/HEAD /{bucket}/{key}`, buckets, `ListBuckets`/`ListObjectsV2`).
+See `examples/s3/` for a working demo with `@aws-sdk/client-s3`.
+
 ## Routes
 
 | Method | Route                          | Private | Description                          |
@@ -58,6 +83,38 @@ ghcr.io/sebastianjnuwu/blob:latest
 | GET    | `/blob/:id/download`           | false   | Download blob file (supports Range)   |
 | GET    | `/blob/:id/view`               | false   | View blob inline (opens in browser)   |
 | DELETE | `/blob/:id`                    | true    | Delete blob                           |
+| PUT    | `/{bucket}/{key}`              | true    | S3 PutObject                          |
+| GET    | `/{bucket}/{key}`              | true    | S3 GetObject (supports Range)         |
+| DELETE | `/{bucket}/{key}`              | true    | S3 DeleteObject                       |
+| HEAD   | `/{bucket}/{key}`              | true    | S3 HeadObject                         |
+| PUT    | `/{bucket}/`                   | true    | S3 CreateBucket (implicit, no-op)     |
+| GET    | `/`                            | false   | S3 ListBuckets (with auth) / Hello    |
+| GET    | `/{bucket}?list-type=2`        | true    | S3 ListObjectsV2                      |
+
+### S3 compatibility
+
+Besides Bearer tokens, every private route accepts AWS SigV4 signatures, so
+standard AWS SDKs work without custom clients:
+
+```js
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+const S3 = new S3Client({
+  region: "us-east-1",
+  endpoint: "http://localhost:3000",
+  forcePathStyle: true, // path style: /bucket/key (not bucket.host/key)
+  credentials: { accessKeyId: "<access-key>", secretAccessKey: "<secret>" },
+});
+
+await S3.send(new PutObjectCommand({ Bucket: "demo", Key: "hello.txt", Body: "hi" }));
+```
+
+Create S3 credentials with `go run . admin create-s3 --label demo --scopes read,write`.
+A runnable demo lives in `examples/s3/` (needs `npm ci` there first).
+
+Notes: ETags carry the content hash (opaque to clients); buckets are implicit
+(a bucket exists once it holds an object); `ListBuckets` derives names from
+stored objects.
 | GET    | `/metrics`                     | true    | Storage and usage metrics (JSON)      |
 | GET    | `/health`                      | false   | Healthcheck (DB, Redis, storage)      |
 | GET    | `/version`                     | false   | Build version                         |
@@ -82,6 +139,23 @@ ghcr.io/sebastianjnuwu/blob:latest
 | updated_at     | TIMESTAMPTZ | No       | Last update timestamp        |
 | expires_at     | TIMESTAMPTZ | Yes      | Optional expiration date     |
 | deleted_at     | TIMESTAMPTZ | Yes      | Soft delete timestamp        |
+
+## API keys (`api_keys` table)
+
+| Column     | Type        | Nullable | Description                        |
+| ---------- | ----------- | -------- | ---------------------------------- |
+| id         | UUID        | No       | Unique identifier                  |
+| label      | TEXT        | No       | Human label (e.g. an admin email)  |
+| token_hash | TEXT        | Yes      | SHA256 of bearer tokens (one side) |
+| access_key_id | TEXT     | Yes      | S3 access key id (other side)  |
+| secret     | TEXT        | Yes      | S3 secret, server-side only        |
+| scopes     | TEXT        | No       | `read,write,delete,all,admin`      |
+| active     | BOOLEAN     | No       | Revoke by setting false            |
+| created_at | TIMESTAMPTZ | No       | Creation timestamp                 |
+| updated_at | TIMESTAMPTZ | No       | Last update timestamp              |
+
+Server-side secrets (e.g. the HMAC key for signed URLs) live in the
+`settings` table (`key`/`value`) and are created automatically on first boot.
 
 ## Usage Examples
 
@@ -119,7 +193,7 @@ Response:
 
 ```bash
 curl -X GET http://localhost:3000/metrics \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more"
+  -H "Authorization: Bearer <api-key>"
 ```
 
 Response:
@@ -183,7 +257,7 @@ Uploads a new blob.
 
 ```bash
 curl -X PUT http://localhost:3000/blob \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more" \
+  -H "Authorization: Bearer <api-key>" \
   -F "file=@README.md" \
   -F "bucket=folder/subfolder" \
   -F "filename=custom_name.txt" \
@@ -387,7 +461,7 @@ Edits blob fields: metadata, public/private, expiration date, bucket, and filena
 
 ```bash
 curl -X POST http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630 \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more" \
+  -H "Authorization: Bearer <api-key>" \
   -H "Content-Type: application/json" \
   -d '{
     "metadata": {"author": "newuser", "desc": "updated file"},
@@ -493,7 +567,7 @@ Deletes a blob, its metadata, and the file from disk. Requires authentication.
 
 ```bash
 curl -X DELETE http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630 \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more"
+  -H "Authorization: Bearer <api-key>"
 ```
 
 Response:
