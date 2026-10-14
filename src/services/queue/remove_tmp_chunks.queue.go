@@ -2,7 +2,7 @@ package services
 
 import (
 	"blob/src/config"
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 	"context"
 	"os"
@@ -23,7 +23,7 @@ func removeOldTmpChunks(ctx context.Context) error {
 		if d, err := time.ParseDuration(v); err == nil {
 			threshold = d
 		} else {
-			functions.Warn("[TMP CLEANUP] Invalid BLOB_TMP_CLEANUP_THRESHOLD '%s': %v (using default 24h)", v, err)
+			logger.Queue.Warn("[TMP CLEANUP] Invalid BLOB_TMP_CLEANUP_THRESHOLD '%s': %v (using default 24h)", v, err)
 		}
 	}
 	if config.Env == nil {
@@ -32,10 +32,10 @@ func removeOldTmpChunks(ctx context.Context) error {
 	cutoff := time.Now().Add(-threshold)
 	removed, err := services.Multipart.CleanupAbandoned(ctx, cutoff)
 	if err != nil {
-		functions.Error("[TMP CLEANUP] Failed to clean up tmp chunks: %v", err)
+		logger.Queue.Error("[TMP CLEANUP] Failed to clean up tmp chunks: %v", err)
 		return err
 	}
-	functions.Info("[TMP CLEANUP] Removed %d abandoned uploads", removed)
+	logger.Queue.Info("[TMP CLEANUP] Removed %d abandoned uploads", removed)
 	return nil
 }
 
@@ -45,19 +45,19 @@ func StartTmpCleanupScheduler() {
 		if d, err := time.ParseDuration(v); err == nil {
 			interval = d
 		} else {
-			functions.Warn("[TMP CLEANUP] Invalid BLOB_TMP_CLEANUP_INTERVAL '%s': %v (using default 24h)", v, err)
+			logger.Queue.Warn("[TMP CLEANUP] Invalid BLOB_TMP_CLEANUP_INTERVAL '%s': %v (using default 24h)", v, err)
 		}
 	}
 
 	retention := interval
-	functions.Info("[QUEUE] Tmp chunk cleanup scheduler started (interval: %v, retention: %v)", interval, retention)
+	logger.Queue.Info("[QUEUE] Tmp chunk cleanup scheduler started (interval: %v, retention: %v)", interval, retention)
 	go func() {
 		for {
 			task := asynq.NewTask(TypeRemoveTmpChunks, nil, asynq.Retention(retention))
 			if services.AsynqClient != nil {
 				_, err := services.AsynqClient.Enqueue(task)
 				if err != nil {
-					functions.Error("[QUEUE ERROR] Failed to enqueue tmp cleanup task: %v", err)
+					logger.Queue.Error("[QUEUE ERROR] Failed to enqueue tmp cleanup task: %v", err)
 				}
 			}
 			time.Sleep(interval)

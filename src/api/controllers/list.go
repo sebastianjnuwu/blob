@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/repository"
 	"blob/src/services"
 )
@@ -36,6 +37,6 @@ func ListBlobsController(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		functions.Error("failed to encode list json: %v", err)
+		logger.Error("failed to encode list json: %v", err)
 	}
 }

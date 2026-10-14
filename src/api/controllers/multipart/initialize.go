@@ -9,6 +9,7 @@ import (
 	"blob/src/auth"
 	"blob/src/config"
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 
 	"github.com/google/uuid"
@@ -69,6 +70,6 @@ func InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := json.NewEncoder(w).Encode(map[string]string{"uploadId": upload.ID.String()}); err != nil {
-		functions.Error("failed to encode uploadId json: %v", err)
+		logger.Error("failed to encode uploadId json: %v", err)
 	}
 }

@@ -1,7 +1,7 @@
 package services
 
 import (
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"os"
 
 	"github.com/hibiken/asynq"
@@ -16,7 +16,7 @@ func InitAsynq() {
 
 	opt, err := asynq.ParseRedisURI(redisURL)
 	if err != nil {
-		functions.Error("Invalid REDIS_URL: %v", err)
+		logger.Queue.Error("Invalid REDIS_URL: %v", err)
 		return
 	}
 
@@ -32,5 +32,5 @@ func InitAsynq() {
 		},
 	)
 
-	functions.Info("[ASYNQ] Initialized successfully.")
+	logger.Queue.Info("[ASYNQ] Initialized successfully.")
 }

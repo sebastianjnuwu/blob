@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format follows Keep a Changelog principles, organized by date.
 
+## [2026-10-14]
+
+### Changed
+- Logger unificado com o da API (`src/lib/logger`): tags de cor (`<red>`, `<cyan>`...), categorias (`Server`, `Database`, `Environment`, `HTTP`, `Queue`), helper `StatusCode`. Chamadas migradas de `functions.Info/Warn/Error/Debug` (16 arquivos + `main.go`); `src/functions/logger.go` removido.
+
 ## [2026-06-29]
 
 ### Added

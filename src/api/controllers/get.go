@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 )
 
@@ -24,6 +25,6 @@ func GetBlobController(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(blob); err != nil {
-		functions.Error("failed to encode blob json: %v", err)
+		logger.Error("failed to encode blob json: %v", err)
 	}
 }

@@ -2,7 +2,7 @@ package controllers
 
 import (
 	"blob/src/database"
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/metrics"
 	"blob/src/models"
 	"database/sql"
@@ -179,6 +179,6 @@ func BlobMetricsController(w http.ResponseWriter, r *http.Request) {
 		"buckets":     buckets,
 		"types":       types,
 	}); err != nil {
-		functions.Error("failed to encode metrics json: %v", err)
+		logger.Error("failed to encode metrics json: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"blob/src/functions"
+	"blob/src/lib/logger"
 )
 
 // Config holds all runtime configuration loaded from environment variables.
@@ -52,7 +53,7 @@ func getenvInt(key string, fallback int) int {
 		if parsed, err := strconv.Atoi(v); err == nil {
 			return parsed
 		}
-		functions.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -62,7 +63,7 @@ func getenvInt64(key string, fallback int64) int64 {
 		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return parsed
 		}
-		functions.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -72,7 +73,7 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
 		}
-		functions.Warn("[CONFIG] Invalid duration for %s: %s (using default %v)", key, v, fallback)
+		logger.Environment.Warn("[CONFIG] Invalid duration for %s: %s (using default %v)", key, v, fallback)
 	}
 	return fallback
 }
@@ -82,7 +83,7 @@ func getenvBool(key string, fallback bool) bool {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
 		}
-		functions.Warn("[CONFIG] Invalid boolean for %s: %s (using default %t)", key, v, fallback)
+		logger.Environment.Warn("[CONFIG] Invalid boolean for %s: %s (using default %t)", key, v, fallback)
 	}
 	return fallback
 }

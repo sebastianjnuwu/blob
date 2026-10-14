@@ -5,7 +5,7 @@ import (
 	"blob/src/api/routes"
 	"blob/src/config"
 	"blob/src/database"
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 	queue "blob/src/services/queue"
 	"blob/src/version"
@@ -22,10 +22,10 @@ var Version = "SNAPSHOT"
 
 func main() {
 
-	functions.Info("Starting Blob API Version: %s", Version)
+	logger.Server.Info("Starting Blob API Version: %s", Version)
 
 	if err := godotenv.Load(); err != nil {
-		functions.Error("No .env file found, relying on environment variables")
+		logger.Environment.Error("No .env file found, relying on environment variables")
 	}
 
 	database.Redis()
@@ -35,16 +35,16 @@ func main() {
 	version.V = Version
 
 	if cfg.SignedURLSecret == "" || len(cfg.SignedURLSecret) < 16 {
-		functions.Error("BLOB_SIGNED_URL_SECRET is required (at least 16 characters). Signed URLs are disabled until it is set.")
+		logger.Environment.Error("BLOB_SIGNED_URL_SECRET is required (at least 16 characters). Signed URLs are disabled until it is set.")
 		os.Exit(1)
 	}
 
 	if cfg.TokenSecret == "change-me-with-32-characters-or-more" || (cfg.TokenSecret != "" && len(cfg.TokenSecret) < 32) {
-		functions.Error("BLOB_TOKEN_SECRET is insecure: use a unique secret of at least 32 characters, or leave it empty to disable the master token and rely on BLOB_API_KEYS only.")
+		logger.Environment.Error("BLOB_TOKEN_SECRET is insecure: use a unique secret of at least 32 characters, or leave it empty to disable the master token and rely on BLOB_API_KEYS only.")
 		os.Exit(1)
 	}
 	if cfg.TokenSecret == "" {
-		functions.Warn("BLOB_TOKEN_SECRET is empty: master token authentication is disabled, only BLOB_API_KEYS can authenticate.")
+		logger.Environment.Warn("BLOB_TOKEN_SECRET is empty: master token authentication is disabled, only BLOB_API_KEYS can authenticate.")
 	}
 
 	services.InitAsynq()
@@ -75,7 +75,7 @@ func main() {
 	corsOpts.AllowCredentials = len(corsOpts.AllowedOrigins) == 1 && corsOpts.AllowedOrigins[0] != "*"
 	handler := cors.New(corsOpts).Handler(mux)
 
-	functions.Info("[SERVER] Server running at: http://%s:%s", cfg.Host, cfg.Port)
+	logger.Server.Info("Server running at: http://%s:%s", cfg.Host, cfg.Port)
 	srv := &http.Server{
 		Addr:         cfg.Host + ":" + cfg.Port,
 		Handler:      handler,
@@ -84,7 +84,7 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 	if err := srv.ListenAndServe(); err != nil {
-		functions.Error("server error: %v", err)
+		logger.Server.Error("server error: %v", err)
 	}
 
 }

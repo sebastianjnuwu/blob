@@ -10,6 +10,7 @@ import (
 	"blob/src/api/validators"
 	"blob/src/config"
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/metrics"
 	"blob/src/services"
 )
@@ -39,7 +40,7 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 			"error":  "Validation failed",
 			"fields": errs,
 		}); err != nil {
-			functions.Error("failed to encode validation error json: %v", err)
+			logger.Error("failed to encode validation error json: %v", err)
 		}
 		return
 	}
@@ -114,7 +115,7 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 	var meta map[string]interface{}
 	if fields.Metadata != "" {
 		if err := json.Unmarshal([]byte(fields.Metadata), &meta); err != nil {
-			functions.Error("failed to unmarshal metadata: %v", err)
+			logger.Error("failed to unmarshal metadata: %v", err)
 		}
 	}
 
@@ -138,6 +139,6 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(blob); err != nil {
-		functions.Error("failed to encode blob JSON: %v", err)
+		logger.Error("failed to encode blob JSON: %v", err)
 	}
 }

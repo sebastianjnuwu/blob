@@ -2,7 +2,7 @@ package services
 
 import (
 	"blob/src/config"
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 	"context"
 	"os"
@@ -23,11 +23,11 @@ func StartQueueWorker() {
 	mux.HandleFunc(TypeRemoveTmpChunks, handleRemoveTmpChunks)
 	go func() {
 		if services.AsynqServer == nil {
-			functions.Error("[QUEUE ERROR] AsynqServer is nil! Did you call InitAsynq() first?")
+			logger.Queue.Error("[QUEUE ERROR] AsynqServer is nil! Did you call InitAsynq() first?")
 			return
 		}
 		if err := services.AsynqServer.Run(mux); err != nil {
-			functions.Error("[QUEUE ERROR] Worker failed: %v", err)
+			logger.Queue.Error("[QUEUE ERROR] Worker failed: %v", err)
 		}
 	}()
 }
@@ -39,22 +39,22 @@ func StartCleanupScheduler() {
 		if d, err := time.ParseDuration(v); err == nil {
 			interval = d
 		} else {
-			functions.Warn("[QUEUE] Invalid BLOB_EXPIRED_CLEANUP_INTERVAL '%s', using default 24h", v)
+			logger.Queue.Warn("[QUEUE] Invalid BLOB_EXPIRED_CLEANUP_INTERVAL '%s', using default 24h", v)
 		}
 	}
 
 	retention := interval
-	functions.Info("[QUEUE] Expired blob scheduler started (interval: %v, retention: %v)", interval, retention)
+	logger.Queue.Info("[QUEUE] Expired blob scheduler started (interval: %v, retention: %v)", interval, retention)
 	go func() {
 		for {
 			if services.AsynqClient == nil {
-				functions.Error("[QUEUE ERROR] AsynqClient is nil! Did you call InitAsynq() first?")
+				logger.Queue.Error("[QUEUE ERROR] AsynqClient is nil! Did you call InitAsynq() first?")
 				return
 			}
 			task := asynq.NewTask(TypeDeleteExpiredBlobs, nil, asynq.Retention(retention))
 			_, err := services.AsynqClient.Enqueue(task)
 			if err != nil {
-				functions.Error("[QUEUE ERROR] Failed to enqueue blob expired task: %v", err)
+				logger.Queue.Error("[QUEUE ERROR] Failed to enqueue blob expired task: %v", err)
 			}
 			time.Sleep(interval)
 		}
@@ -67,9 +67,9 @@ func removeExpiredBlobs(ctx context.Context) error {
 	}
 	removed, err := services.Blobs.PurgeExpired(ctx)
 	if err != nil {
-		functions.Error("[QUEUE] Failed to purge expired blobs: %v", err)
+		logger.Queue.Error("[QUEUE] Failed to purge expired blobs: %v", err)
 		return err
 	}
-	functions.Info("[QUEUE] Expired blobs removed. Total: %d", removed)
+	logger.Queue.Info("[QUEUE] Expired blobs removed. Total: %d", removed)
 	return nil
 }
