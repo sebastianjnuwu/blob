@@ -42,9 +42,6 @@ services:
       BLOB_DATABASE_URL: "postgresql://blob:blob@postgres:5432/blob"
       REDIS_URL: "redis://redis:6379/0"
       BLOB_STORAGE_PATH: "/data/uploads"
-      BLOB_TOKEN_SECRET: ${BLOB_TOKEN_SECRET:-}
-      BLOB_SIGNED_URL_SECRET: ${BLOB_SIGNED_URL_SECRET:-signed-url-secret-min-16-chars}
-      BLOB_API_KEYS: ${BLOB_API_KEYS:-teste-full:read,write,delete;teste-read:read}
       BLOB_RATE_LIMIT_MAX: ${BLOB_RATE_LIMIT_MAX:-120}
       BLOB_RATE_LIMIT_WINDOW_MS: ${BLOB_RATE_LIMIT_WINDOW_MS:-60000}
       BLOB_ALLOWED_MIME_TYPES: ${BLOB_ALLOWED_MIME_TYPES:-*}
