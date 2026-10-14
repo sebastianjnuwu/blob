@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 
-	"blob/src/config"
 	"blob/src/database"
 	"blob/src/lib/logger"
 	"blob/src/models"
@@ -18,8 +17,8 @@ const hmacSecretKey = "signed_url_secret"
 // signedSecret caches the HMAC secret after bootstrap.
 var signedSecret string
 
-// hashToken returns the hex sha256 of a bearer token.
-func hashToken(token string) string {
+// HashToken returns the hex sha256 of a bearer token.
+func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
@@ -39,7 +38,7 @@ func Verify(bearerToken string) *APIKey {
 	if bearerToken == "" || database.DB == nil {
 		return nil
 	}
-	want := hashToken(bearerToken)
+	want := HashToken(bearerToken)
 	var row models.ApiKey
 	if err := database.DB.Where("token_hash = ? AND active = ?", want, true).First(&row).Error; err != nil {
 		return nil
@@ -50,8 +49,8 @@ func Verify(bearerToken string) *APIKey {
 	return &APIKey{Token: bearerToken, Perms: parsePermissions(row.Scopes)}
 }
 
-// EnsureBootstrap creates the HMAC secret and the first admin key when empty.
-// The admin plaintext is printed once; it is never stored.
+// EnsureBootstrap creates the HMAC secret for signed URLs when missing.
+// API keys are never auto-generated: create them with `blob admin create`.
 func EnsureBootstrap() {
 	if database.DB == nil {
 		logger.Database.Error("bootstrap skipped: database unavailable")
@@ -72,30 +71,4 @@ func EnsureBootstrap() {
 		}
 	}
 	signedSecret = s.Value
-
-	var n int64
-	database.DB.Model(&models.ApiKey{}).Where("active = ?", true).Count(&n)
-	if n > 0 {
-		return
-	}
-
-	token, rerr := randomToken()
-	if rerr != nil {
-		logger.Database.Error("bootstrap admin key: %v", rerr)
-		return
-	}
-	label := "admin"
-	if config.Env != nil && config.Env.AdminEmail != "" {
-		label = config.Env.AdminEmail
-	}
-	if err := database.DB.Create(&models.ApiKey{
-		Label:     label,
-		TokenHash: hashToken(token),
-		Scopes:    "all",
-		Active:    true,
-	}).Error; err != nil {
-		logger.Database.Error("bootstrap admin key: %v", err)
-		return
-	}
-	logger.Database.Info("bootstrap admin key (shown once): %s", token)
 }

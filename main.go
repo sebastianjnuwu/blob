@@ -4,6 +4,7 @@ import (
 	"blob/src/api/middleware"
 	"blob/src/api/routes"
 	"blob/src/auth"
+	"blob/cli"
 	"blob/src/config"
 	"blob/src/database"
 	"blob/src/lib/logger"
@@ -11,6 +12,7 @@ import (
 	queue "blob/src/services/queue"
 	"blob/src/version"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -21,6 +23,13 @@ import (
 var Version = "SNAPSHOT"
 
 func main() {
+
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		if err := godotenv.Load(); err != nil {
+			logger.Environment.Error("No .env file found, relying on environment variables")
+		}
+		os.Exit(cli.RunAdmin(os.Args[2:]))
+	}
 
 	logger.Server.Info("Starting Blob API Version: %s", Version)
 
