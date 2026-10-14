@@ -5,3 +5,4 @@ logs/
 bin/
 *.exe
 .env
+.env.production
