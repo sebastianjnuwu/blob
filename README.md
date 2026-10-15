@@ -519,6 +519,39 @@ console.log(url);
 
 The client must send a `PUT` request to the generated URL. If `ContentType` is included when signing, the upload must use the corresponding content type. This requires support for presigned SigV4 requests.
 
+#### Multipart Upload
+
+Upload a large file in parts (each part must respect `BLOB_MIN_CHUNK_SIZE`):
+
+```javascript
+import {
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+} from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+import { readFileSync } from "node:fs";
+
+const Bucket = process.env.S3_BUCKET;
+const Key = "video.mp4";
+const Body = readFileSync("./video.mp4");
+const half = Math.ceil(Body.length / 2);
+
+const { UploadId } = await s3.send(new CreateMultipartUploadCommand({ Bucket, Key }));
+const parts = [];
+for (const [i, chunk] of [Body.subarray(0, half), Body.subarray(half)].entries()) {
+  const { ETag } = await s3.send(
+    new UploadPartCommand({ Bucket, Key, UploadId, PartNumber: i + 1, Body: chunk })
+  );
+  parts.push({ ETag, PartNumber: i + 1 });
+}
+await s3.send(new CompleteMultipartUploadCommand({ Bucket, Key, UploadId, MultipartUpload: { Parts: parts } }));
+
+console.log("Multipart upload completed.");
+```
+
+Abort with `AbortMultipartUploadCommand`; list parts/uploads with `ListPartsCommand` / `ListMultipartUploadsCommand`.
+
 #### Delete an Object
 
 Delete an object by its key:
