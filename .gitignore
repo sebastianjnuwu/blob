@@ -8,3 +8,5 @@ bin/
 .env.production
 
 node_modules/
+
+files/
