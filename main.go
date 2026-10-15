@@ -71,7 +71,7 @@ func main() {
 	// AllowCredentials cannot be combined with the "*" wildcard; auth is done
 	// via the Authorization header, so cookies are not needed.
 	corsOpts.AllowCredentials = len(corsOpts.AllowedOrigins) == 1 && corsOpts.AllowedOrigins[0] != "*"
-	handler := cors.New(corsOpts).Handler(mux)
+	handler := middleware.AccessLog(cors.New(corsOpts).Handler(mux))
 
 	logger.Server.Info("Server running at: <cyan>http://%s:%s</>.", cfg.Host, cfg.Port)
 	srv := &http.Server{
