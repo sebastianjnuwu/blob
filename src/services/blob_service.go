@@ -182,6 +182,22 @@ func (s *BlobService) Buckets(ctx context.Context) ([]repository.Bucket, error) 
 	return s.repo.Buckets(ctx)
 }
 
+// Clone persists a pre-built row (used by S3 CopyObject; shares the file).
+func (s *BlobService) Clone(ctx context.Context, blob *models.Blob) error {
+	if err := s.repo.Create(ctx, blob); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{
+		Type:     events.BlobUploaded,
+		BlobID:   blob.ID,
+		Bucket:   blob.Bucket,
+		Filename: blob.Filename,
+		Size:     blob.Size,
+		Data:     map[string]interface{}{"hash": blob.Hash, "path": blob.Path, "copy": true},
+	})
+	return nil
+}
+
 // List returns a paginated, filtered list of blobs.
 func (s *BlobService) List(ctx context.Context, f repository.ListFilter) (*ListResult, error) {
 	blobs, total, err := s.repo.List(ctx, f)

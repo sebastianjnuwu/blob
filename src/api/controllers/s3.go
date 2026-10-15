@@ -17,6 +17,8 @@ import (
 	"blob/src/lib/logger"
 	"blob/src/repository"
 	"blob/src/services"
+
+	"github.com/google/uuid"
 )
 
 // S3 compatibility shim: bucket ops + object ops over the blob service.
@@ -138,6 +140,10 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	if s3Authorize(w, r, auth.PermWrite) == nil {
 		return
 	}
+	if src := r.Header.Get("X-Amz-Copy-Source"); src != "" {
+		s3CopyObject(w, r, bucket, key, src)
+		return
+	}
 	if bucket == "" || !validS3Key(key) {
 		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid bucket or key."})
 		return
@@ -182,6 +188,14 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 		meta = nil
 	}
 
+	// S3 overwrites same-key objects: upload first (dedup may share the
+	// file), then drop the previous row if it is a different object.
+	var prevID uuid.UUID
+	hasPrev := false
+	if prev, err := services.Blobs.GetByBucketFilename(r.Context(), bucket, key); err == nil {
+		prevID, hasPrev = prev.ID, true
+	}
+
 	blob, err := services.Blobs.Upload(r.Context(), services.UploadInput{
 		Bucket: bucket, Filename: key, Mime: mime, Size: r.ContentLength,
 		Public: false, Metadata: meta, File: body,
@@ -190,6 +204,9 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 		logger.Error("s3 put %s/%s: %v", bucket, key, err)
 		writeS3Error(w, s3Error{http.StatusInternalServerError, "InternalError", "Failed to store object."})
 		return
+	}
+	if hasPrev && prevID != blob.ID {
+		_ = services.Blobs.Delete(r.Context(), prevID)
 	}
 	w.Header().Set("ETag", etagOf(blob.Hash))
 	w.WriteHeader(http.StatusOK)
@@ -252,6 +269,48 @@ func s3DeleteObject(w http.ResponseWriter, r *http.Request, bucket, key string) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// s3CopyObject implements S3 CopyObject (PUT + X-Amz-Copy-Source).
+// The new row shares the physical file; refcounting handles deletion.
+func s3CopyObject(w http.ResponseWriter, r *http.Request, bucket, key, src string) {
+	if bucket == "" || !validS3Key(key) {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid bucket or key."})
+		return
+	}
+	srcPath, err := url.PathUnescape(strings.TrimPrefix(src, "/"))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid copy source."})
+		return
+	}
+	srcBucket, srcKey := splitS3Path("/" + srcPath)
+	if srcBucket == "" || srcKey == "" {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid copy source."})
+		return
+	}
+	orig, err := services.Blobs.GetByBucketFilename(r.Context(), srcBucket, srcKey)
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchKey", "Copy source not found."})
+		return
+	}
+	dup := *orig
+	dup.ID = uuid.New()
+	dup.Bucket = bucket
+	dup.Filename = key
+	dup.CreatedAt = time.Now()
+	dup.UpdatedAt = time.Now()
+	if err := services.Blobs.Clone(r.Context(), &dup); err != nil {
+		logger.Error("s3 copy %s/%s: %v", bucket, key, err)
+		writeS3Error(w, s3Error{http.StatusInternalServerError, "InternalError", "Failed to copy object."})
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_ = xml.NewEncoder(w).Encode(struct {
+		XMLName      xml.Name `xml:"CopyObjectResult"`
+		ETag         string   `xml:"ETag"`
+		LastModified string   `xml:"LastModified"`
+	}{ETag: etagOf(dup.Hash), LastModified: dup.UpdatedAt.UTC().Format(time.RFC3339)})
 }
 
 func validBucket(bucket string) bool {
