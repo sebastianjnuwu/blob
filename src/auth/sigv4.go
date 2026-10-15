@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,24 +86,11 @@ func verifyS3(r *http.Request, now time.Time, lookup func(string) (string, map[P
 	sum := sha256.Sum256([]byte(canonical))
 	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scopeStr + "\n" + hex.EncodeToString(sum[:])
 
-	k := hmacSHA256([]byte("AWS4"+secret), datestamp)
-	k = hmacSHA256(k, region)
-	k = hmacSHA256(k, service)
-	k = hmacSHA256(k, "aws4_request")
-	expected := hex.EncodeToString(hmacSHA256(k, toSign))
-
-	sig, err := hex.DecodeString(strings.ToLower(strings.TrimSpace(signature)))
-	if err != nil {
+	k := signingKey(secret, datestamp, region, service)
+	if !checkSignature(k, toSign, signature) {
 		return nil
 	}
-	exp, err := hex.DecodeString(expected)
-	if err != nil {
-		return nil
-	}
-	if subtle.ConstantTimeCompare(sig, exp) != 1 {
-		return nil
-	}
-	return &APIKey{Token: "s3:" + accessKey, Perms: perms}
+	return &APIKey{Token: "s3:" + accessKey, AccessKey: accessKey, Perms: perms}
 }
 
 // VerifyS3 verifies with the current time.
@@ -127,6 +115,104 @@ func hmacSHA256(key []byte, s string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(s))
 	return m.Sum(nil)
+}
+
+// checkSignature recomputes the SigV4 signature and compares in constant time.
+func checkSignature(signingKey []byte, toSign, signatureHex string) bool {
+	expected := hex.EncodeToString(hmacSHA256(signingKey, toSign))
+	sig, err := hex.DecodeString(strings.ToLower(strings.TrimSpace(signatureHex)))
+	if err != nil {
+		return false
+	}
+	exp, err := hex.DecodeString(expected)
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(sig, exp) == 1
+}
+
+// signingKey derives the SigV4 signing key.
+func signingKey(secret, datestamp, region, service string) []byte {
+	k := hmacSHA256([]byte("AWS4"+secret), datestamp)
+	k = hmacSHA256(k, region)
+	k = hmacSHA256(k, service)
+	return hmacSHA256(k, "aws4_request")
+}
+
+// VerifyS3Presigned verifies a presigned URL (SigV4 in query string).
+func VerifyS3Presigned(r *http.Request, now time.Time) *APIKey {
+	q := r.URL.Query()
+	if q.Get("X-Amz-Signature") == "" {
+		return nil
+	}
+	return verifyS3Presigned(r, now, S3Credentials, q)
+}
+
+func verifyS3Presigned(r *http.Request, now time.Time, lookup func(string) (string, map[Permission]bool, bool), q url.Values) *APIKey {
+	credential, signedHeaders, signature := q.Get("X-Amz-Credential"), q.Get("X-Amz-SignedHeaders"), q.Get("X-Amz-Signature")
+	amzDate, expires := q.Get("X-Amz-Date"), q.Get("X-Amz-Expires")
+	if credential == "" || signedHeaders == "" || signature == "" || amzDate == "" || expires == "" {
+		return nil
+	}
+	scope := strings.Split(credential, "/")
+	if len(scope) != 5 || scope[4] != "aws4_request" {
+		return nil
+	}
+	accessKey, datestamp, region, service := scope[0], scope[1], scope[2], scope[3]
+	secret, perms, ok := lookup(accessKey)
+	if !ok {
+		return nil
+	}
+	t, err := time.Parse("20060102T150405Z", amzDate)
+	if err != nil {
+		return nil
+	}
+	ttl, err := strconv.Atoi(expires)
+	if err != nil || ttl <= 0 {
+		return nil
+	}
+	if now.After(t.Add(time.Duration(ttl) * time.Second)) {
+		return nil
+	}
+
+	filtered := url.Values{}
+	for k, vs := range q {
+		if strings.EqualFold(k, "X-Amz-Signature") {
+			continue
+		}
+		filtered[k] = vs
+	}
+	names := strings.Split(strings.ToLower(signedHeaders), ";")
+	sort.Strings(names)
+	lines := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		var v string
+		if n == "host" {
+			v = r.Host
+		} else {
+			v = r.Header.Get(http.CanonicalHeaderKey(n))
+		}
+		if v == "" {
+			return nil
+		}
+		lines = append(lines, n+":"+strings.Join(strings.Fields(v), " "))
+	}
+	canonical := strings.Join([]string{
+		r.Method,
+		encodeURI(r.URL.EscapedPath()),
+		encodeQuery(filtered),
+		strings.Join(lines, "\n") + "\n",
+		strings.Join(names, ";"),
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	scopeStr := strings.Join(scope[1:4], "/") + "/aws4_request"
+	sum := sha256.Sum256([]byte(canonical))
+	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scopeStr + "\n" + hex.EncodeToString(sum[:])
+	if !checkSignature(signingKey(secret, datestamp, region, service), toSign, signature) {
+		return nil
+	}
+	return &APIKey{Token: "s3:" + accessKey, AccessKey: accessKey, Perms: perms}
 }
 
 // encodeURI normalizes an escaped path: keeps '/' and valid %XX triplets,

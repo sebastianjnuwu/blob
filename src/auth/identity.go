@@ -29,5 +29,10 @@ func UserIDFromRequest(r *http.Request) uuid.UUID {
 	if token == "" || Verify(token) == nil {
 		return uuid.Nil
 	}
-	return uuid.NewSHA1(userIDNamespace, []byte(token))
+	return StableUserID(token)
+}
+
+// StableUserID derives a stable UUID from any credential string.
+func StableUserID(s string) uuid.UUID {
+	return uuid.NewSHA1(userIDNamespace, []byte(s))
 }

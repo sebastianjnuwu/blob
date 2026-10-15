@@ -17,8 +17,9 @@ const (
 
 // APIKey is a token with an optional permission scope.
 type APIKey struct {
-	Token string
-	Perms map[Permission]bool
+	Token     string
+	AccessKey string
+	Perms     map[Permission]bool
 }
 
 // HasPerm reports whether the key allows the given operation.

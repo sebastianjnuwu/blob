@@ -1,8 +1,13 @@
 package controllers
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,10 +20,12 @@ import (
 	"blob/src/config"
 	"blob/src/functions"
 	"blob/src/lib/logger"
+	"blob/src/models"
 	"blob/src/repository"
 	"blob/src/services"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
 
 // S3 compatibility shim: bucket ops + object ops over the blob service.
@@ -40,12 +47,20 @@ func writeS3Error(w http.ResponseWriter, e s3Error) {
 	}{Code: e.Code, Message: e.Message})
 }
 
+// s3Credentials returns the key for bearer, SigV4 header, or presigned URL.
+func s3Credentials(r *http.Request) *auth.APIKey {
+	if key := auth.Verify(bearerTokenOf(r)); key != nil {
+		return key
+	}
+	if key := auth.VerifyS3(r); key != nil {
+		return key
+	}
+	return auth.VerifyS3Presigned(r, time.Now().UTC())
+}
+
 // s3Authorize returns the key for bearer or SigV4 credentials or writes the error.
 func s3Authorize(w http.ResponseWriter, r *http.Request, perm auth.Permission) *auth.APIKey {
-	key := auth.Verify(bearerTokenOf(r))
-	if key == nil {
-		key = auth.VerifyS3(r)
-	}
+	key := s3Credentials(r)
 	if key == nil {
 		writeS3Error(w, s3Error{http.StatusForbidden, "SignatureDoesNotMatch", "The request signature does not match."})
 		return nil
@@ -55,6 +70,19 @@ func s3Authorize(w http.ResponseWriter, r *http.Request, perm auth.Permission) *
 		return nil
 	}
 	return key
+}
+
+// s3SessionUser derives the stable multipart-session owner for S3 callers.
+func s3SessionUser(r *http.Request, key *auth.APIKey) uuid.UUID {
+	if key != nil && key.AccessKey != "" {
+		return auth.StableUserID(key.AccessKey)
+	}
+	return auth.UserIDFromRequest(r)
+}
+
+// isPublicObject reports whether the object is world-readable.
+func isPublicObject(blob *models.Blob) bool {
+	return blob != nil && blob.Public != nil && *blob.Public
 }
 
 func bearerTokenOf(r *http.Request) string {
@@ -100,12 +128,26 @@ func S3Handler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "PUT":
+		if _, ok := q["partNumber"]; ok {
+			if _, ok := q["uploadId"]; ok {
+				s3UploadPart(w, r, bucket, key)
+				return
+			}
+		}
 		if key == "" {
 			s3CreateBucket(w, r, bucket)
 			return
 		}
 		s3PutObject(w, r, bucket, key)
 	case "GET":
+		if _, ok := q["uploads"]; ok {
+			s3ListMultipartUploads(w, r, bucket)
+			return
+		}
+		if _, ok := q["uploadId"]; ok {
+			s3ListParts(w, r, bucket, key)
+			return
+		}
 		if _, ok := q["list-type"]; ok {
 			s3ListObjects(w, r, bucket)
 			return
@@ -119,7 +161,21 @@ func S3Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s3GetObject(w, r, bucket, key)
+	case "POST":
+		if _, ok := q["uploads"]; ok {
+			s3CreateMultipart(w, r, bucket, key)
+			return
+		}
+		if _, ok := q["uploadId"]; ok {
+			s3CompleteMultipart(w, r, bucket, key)
+			return
+		}
+		writeS3Error(w, s3Error{http.StatusMethodNotAllowed, "MethodNotAllowed", "Method not allowed."})
 	case "DELETE":
+		if _, ok := q["uploadId"]; ok {
+			s3AbortMultipart(w, r, bucket, key)
+			return
+		}
 		if key == "" {
 			s3DeleteBucket(w, r, bucket)
 			return
@@ -188,6 +244,17 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 		meta = nil
 	}
 
+	var expiresAt *time.Time
+	if v := r.Header.Get("X-Blob-Expires-At"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil || !t.After(time.Now()) {
+			writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid X-Blob-Expires-At."})
+			return
+		}
+		expiresAt = &t
+	}
+	public := strings.EqualFold(r.Header.Get("X-Amz-Acl"), "public-read")
+
 	// S3 overwrites same-key objects: upload first (dedup may share the
 	// file), then drop the previous row if it is a different object.
 	var prevID uuid.UUID
@@ -198,7 +265,7 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 
 	blob, err := services.Blobs.Upload(r.Context(), services.UploadInput{
 		Bucket: bucket, Filename: key, Mime: mime, Size: r.ContentLength,
-		Public: false, Metadata: meta, File: body,
+		Public: public, ExpiresAt: expiresAt, Metadata: meta, File: body,
 	})
 	if err != nil {
 		logger.Error("s3 put %s/%s: %v", bucket, key, err)
@@ -213,12 +280,19 @@ func s3PutObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 }
 
 func s3GetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
-	if s3Authorize(w, r, auth.PermRead) == nil {
+	keyAuth := s3Credentials(r)
+	blob, err := services.Blobs.GetByBucketFilename(r.Context(), bucket, key)
+	if err != nil || isExpired(blob) {
+		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchKey", "Object not found."})
 		return
 	}
-	blob, err := services.Blobs.GetByBucketFilename(r.Context(), bucket, key)
-	if err != nil {
-		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchKey", "Object not found."})
+	if keyAuth == nil {
+		if !isPublicObject(blob) {
+			writeS3Error(w, s3Error{http.StatusForbidden, "AccessDenied", "Access denied."})
+			return
+		}
+	} else if !auth.RequirePermission(keyAuth, auth.PermRead) {
+		writeS3Error(w, s3Error{http.StatusForbidden, "AccessDenied", "Insufficient permissions."})
 		return
 	}
 	f, err := services.Blobs.OpenFile(r.Context(), blob.ID, "download_count")
@@ -236,23 +310,46 @@ func s3GetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	w.Header().Set("ETag", etagOf(blob.Hash))
 	w.Header().Set("Last-Modified", blob.UpdatedAt.UTC().Format(http.TimeFormat))
 	w.Header().Set("Accept-Ranges", "bytes")
+	setMetaHeaders(w, blob.Metadata)
 	http.ServeContent(w, r, key, blob.UpdatedAt, f.Reader)
 }
 
 func s3HeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
-	if s3Authorize(w, r, auth.PermRead) == nil {
+	keyAuth := s3Credentials(r)
+	blob, err := services.Blobs.GetByBucketFilename(r.Context(), bucket, key)
+	if err != nil || isExpired(blob) {
+		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchKey", "Object not found."})
 		return
 	}
-	blob, err := services.Blobs.GetByBucketFilename(r.Context(), bucket, key)
-	if err != nil {
-		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchKey", "Object not found."})
+	if keyAuth == nil {
+		if !isPublicObject(blob) {
+			writeS3Error(w, s3Error{http.StatusForbidden, "AccessDenied", "Access denied."})
+			return
+		}
+	} else if !auth.RequirePermission(keyAuth, auth.PermRead) {
+		writeS3Error(w, s3Error{http.StatusForbidden, "AccessDenied", "Insufficient permissions."})
 		return
 	}
 	w.Header().Set("Content-Type", blob.Mime)
 	w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
 	w.Header().Set("ETag", etagOf(blob.Hash))
 	w.Header().Set("Last-Modified", blob.UpdatedAt.UTC().Format(http.TimeFormat))
+	setMetaHeaders(w, blob.Metadata)
 	w.WriteHeader(http.StatusOK)
+}
+
+// setMetaHeaders emits stored metadata as x-amz-meta-* response headers.
+func setMetaHeaders(w http.ResponseWriter, raw datatypes.JSON) {
+	if len(raw) == 0 {
+		return
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return
+	}
+	for k, v := range meta {
+		w.Header().Set("X-Amz-Meta-"+k, fmt.Sprint(v))
+	}
 }
 
 func s3DeleteObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
@@ -299,6 +396,16 @@ func s3CopyObject(w http.ResponseWriter, r *http.Request, bucket, key, src strin
 	dup.Filename = key
 	dup.CreatedAt = time.Now()
 	dup.UpdatedAt = time.Now()
+	if strings.EqualFold(r.Header.Get("X-Amz-Metadata-Directive"), "REPLACE") {
+		meta := map[string]any{}
+		for name, vs := range r.Header {
+			if strings.HasPrefix(strings.ToLower(name), "x-amz-meta-") && len(vs) > 0 {
+				meta[strings.ToLower(name[len("X-Amz-Meta-"):])] = vs[0]
+			}
+		}
+		raw, _ := json.Marshal(meta)
+		dup.Metadata = datatypes.JSON(raw)
+	}
 	if err := services.Blobs.Clone(r.Context(), &dup); err != nil {
 		logger.Error("s3 copy %s/%s: %v", bucket, key, err)
 		writeS3Error(w, s3Error{http.StatusInternalServerError, "InternalError", "Failed to copy object."})
@@ -512,4 +619,256 @@ func s3ListObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
 	_ = xml.NewEncoder(w).Encode(out)
+}
+
+// s3CreateMultipart starts an S3 multipart upload (POST ?uploads).
+func s3CreateMultipart(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	keyAuth := s3Authorize(w, r, auth.PermWrite)
+	if keyAuth == nil {
+		return
+	}
+	if bucket == "" || !validS3Key(key) {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid bucket or key."})
+		return
+	}
+	upload, err := services.Multipart.Initiate(r.Context(), services.InitiateInput{
+		UserID: s3SessionUser(r, keyAuth), Bucket: bucket, Filename: key,
+	})
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusInternalServerError, "InternalError", "Failed to initiate upload."})
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_ = xml.NewEncoder(w).Encode(struct {
+		XMLName  xml.Name `xml:"InitiateMultipartUploadResult"`
+		Xmlns    string   `xml:"xmlns,attr"`
+		Bucket   string   `xml:"Bucket"`
+		Key      string   `xml:"Key"`
+		UploadID string   `xml:"UploadId"`
+	}{
+		Xmlns:  "http://s3.amazonaws.com/doc/2006-03-01/",
+		Bucket: bucket, Key: key, UploadID: upload.ID.String(),
+	})
+}
+
+// s3UploadPart stores one S3 part (PUT ?partNumber=N&uploadId=U). The part
+// hash is computed server-side from the received bytes.
+func s3UploadPart(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	keyAuth := s3Authorize(w, r, auth.PermWrite)
+	if keyAuth == nil {
+		return
+	}
+	n, err := strconv.Atoi(r.URL.Query().Get("partNumber"))
+	if err != nil || n < 1 || n > 10000 {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid partNumber."})
+		return
+	}
+	uploadID, err := uuid.Parse(r.URL.Query().Get("uploadId"))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid uploadId."})
+		return
+	}
+	if r.ContentLength < 0 {
+		writeS3Error(w, s3Error{http.StatusLengthRequired, "MissingContentLength", "Content-Length is required."})
+		return
+	}
+	cfg := config.Env
+	if cfg == nil {
+		cfg = config.Load()
+	}
+	limit := cfg.MaxChunkSize
+	if limit <= 0 {
+		limit = 20 << 20
+	}
+	if r.ContentLength > limit {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "EntityTooLarge", "Part too large."})
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	if err != nil || int64(len(raw)) != r.ContentLength {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "IncompleteBody", "Could not read part body."})
+		return
+	}
+	sum := sha256.Sum256(raw)
+	if err := services.Multipart.UploadChunk(r.Context(), services.ChunkInput{
+		UploadID: uploadID, UserID: s3SessionUser(r, keyAuth), Index: n,
+		Hash: hex.EncodeToString(sum[:]), MaxSize: limit, Body: bytes.NewReader(raw),
+	}); err != nil {
+		msg := err.Error()
+		status, code := http.StatusBadRequest, "InvalidRequest"
+		if msg == "invalid uploadId" {
+			status, code = http.StatusNotFound, "NoSuchUpload"
+		}
+		writeS3Error(w, s3Error{status, code, msg})
+		return
+	}
+	w.Header().Set("ETag", `"`+hex.EncodeToString(sum[:])+`"`)
+	w.WriteHeader(http.StatusOK)
+}
+
+// s3CompleteMultipart finishes an S3 multipart upload (POST ?uploadId).
+func s3CompleteMultipart(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	keyAuth := s3Authorize(w, r, auth.PermWrite)
+	if keyAuth == nil {
+		return
+	}
+	uploadID, err := uuid.Parse(r.URL.Query().Get("uploadId"))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid uploadId."})
+		return
+	}
+	blob, err := services.Multipart.Complete(r.Context(), services.CompleteInput{
+		UploadID: uploadID, UserID: s3SessionUser(r, keyAuth), SkipHashCheck: true,
+	})
+	if err != nil {
+		msg := err.Error()
+		status, code := http.StatusBadRequest, "InvalidRequest"
+		if msg == "invalid uploadId" {
+			status, code = http.StatusNotFound, "NoSuchUpload"
+		}
+		writeS3Error(w, s3Error{status, code, msg})
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_ = xml.NewEncoder(w).Encode(struct {
+		XMLName  xml.Name `xml:"CompleteMultipartUploadResult"`
+		Xmlns    string   `xml:"xmlns,attr"`
+		Location string   `xml:"Location"`
+		Bucket   string   `xml:"Bucket"`
+		Key      string   `xml:"Key"`
+		ETag     string   `xml:"ETag"`
+	}{
+		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
+		Location: "/" + bucket + "/" + key, Bucket: bucket, Key: key, ETag: etagOf(blob.Hash),
+	})
+}
+
+// s3AbortMultipart cancels an S3 multipart upload (DELETE ?uploadId).
+func s3AbortMultipart(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	keyAuth := s3Authorize(w, r, auth.PermWrite)
+	if keyAuth == nil {
+		return
+	}
+	uploadID, err := uuid.Parse(r.URL.Query().Get("uploadId"))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid uploadId."})
+		return
+	}
+	if err := services.Multipart.Abort(r.Context(), uploadID, s3SessionUser(r, keyAuth)); err != nil {
+		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchUpload", "Upload not found."})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// s3ListParts lists uploaded parts (GET ?uploadId). ETags are omitted:
+// resume across processes is not supported.
+func s3ListParts(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	keyAuth := s3Authorize(w, r, auth.PermRead)
+	if keyAuth == nil {
+		return
+	}
+	uploadID, err := uuid.Parse(r.URL.Query().Get("uploadId"))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusBadRequest, "InvalidRequest", "Invalid uploadId."})
+		return
+	}
+	parts, err := services.Multipart.Parts(r.Context(), uploadID, s3SessionUser(r, keyAuth))
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusNotFound, "NoSuchUpload", "Upload not found."})
+		return
+	}
+	maxParts := 1000
+	if v, err := strconv.Atoi(r.URL.Query().Get("max-parts")); err == nil && v > 0 {
+		maxParts = v
+		if maxParts > 1000 {
+			maxParts = 1000
+		}
+	}
+	marker := 0
+	if v, err := strconv.Atoi(r.URL.Query().Get("part-number-marker")); err == nil && v > 0 {
+		marker = v
+	}
+	type part struct {
+		PartNumber int   `xml:"PartNumber"`
+		Size       int64 `xml:"Size"`
+	}
+	items := []part{}
+	for _, p := range parts {
+		if p.Number <= marker {
+			continue
+		}
+		if len(items) >= maxParts {
+			break
+		}
+		items = append(items, part{PartNumber: p.Number, Size: p.Size})
+	}
+	truncated := false
+	nextMarker := 0
+	if len(items) == maxParts {
+		for _, p := range parts {
+			if p.Number > items[len(items)-1].PartNumber {
+				truncated = true
+				nextMarker = items[len(items)-1].PartNumber
+				break
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_ = xml.NewEncoder(w).Encode(struct {
+		XMLName              xml.Name `xml:"ListPartsResult"`
+		Xmlns                string   `xml:"xmlns,attr"`
+		Bucket               string   `xml:"Bucket"`
+		Key                  string   `xml:"Key"`
+		UploadID             string   `xml:"UploadId"`
+		PartNumberMarker     int      `xml:"PartNumberMarker"`
+		NextPartNumberMarker int      `xml:"NextPartNumberMarker,omitempty"`
+		MaxParts             int      `xml:"MaxParts"`
+		IsTruncated          bool     `xml:"IsTruncated"`
+		Parts                []part   `xml:"Part"`
+	}{
+		Xmlns:  "http://s3.amazonaws.com/doc/2006-03-01/",
+		Bucket: bucket, Key: key, UploadID: uploadID.String(),
+		PartNumberMarker: marker, NextPartNumberMarker: nextMarker,
+		MaxParts: maxParts, IsTruncated: truncated, Parts: items,
+	})
+}
+
+// s3ListMultipartUploads lists in-progress uploads (GET /{bucket}?uploads).
+func s3ListMultipartUploads(w http.ResponseWriter, r *http.Request, bucket string) {
+	keyAuth := s3Authorize(w, r, auth.PermRead)
+	if keyAuth == nil {
+		return
+	}
+	uploads, err := services.Multipart.FindIncomplete(r.Context(), 1000)
+	if err != nil {
+		writeS3Error(w, s3Error{http.StatusInternalServerError, "InternalError", "Failed to list uploads."})
+		return
+	}
+	type item struct {
+		Key       string `xml:"Key"`
+		UploadID  string `xml:"UploadId"`
+		Initiated string `xml:"Initiated"`
+	}
+	items := []item{}
+	for _, u := range uploads {
+		if bucket != "" && u.Bucket != bucket {
+			continue
+		}
+		items = append(items, item{Key: u.Filename, UploadID: u.ID.String(), Initiated: u.CreatedAt.UTC().Format(time.RFC3339)})
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_ = xml.NewEncoder(w).Encode(struct {
+		XMLName xml.Name `xml:"ListMultipartUploadsResult"`
+		Xmlns   string   `xml:"xmlns,attr"`
+		Bucket  string   `xml:"Bucket"`
+		Uploads []item   `xml:"Upload"`
+	}{
+		Xmlns:  "http://s3.amazonaws.com/doc/2006-03-01/",
+		Bucket: bucket, Uploads: items,
+	})
 }

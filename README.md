@@ -58,7 +58,9 @@ Private routes accept either a bearer token or an AWS SigV4 signature:
 curl -H "Authorization: Bearer <api-key>" http://localhost:3000/blob
 ```
 
-The server is S3-compatible, supporting standard AWS SDKs with SigV4 authentication and `PUT`, `GET`, `DELETE`, and `HEAD` operations on `/{bucket}/{key}`, as well as `ListBuckets` and `ListObjectsV2`.
+The server is S3-compatible, supporting standard AWS SDKs with SigV4 authentication
+(header or presigned query string) and the operations below on `/{bucket}/{key}`,
+as well as `ListBuckets` and `ListObjectsV2`.
 
 See [`examples/s3/`](examples/s3/) for a working demo using `@aws-sdk/client-s3`.
 
@@ -78,13 +80,19 @@ See [`examples/s3/`](examples/s3/) for a working demo using `@aws-sdk/client-s3`
 | GET    | `/blob/:id/download`           | false   | Download blob file (supports Range)   |
 | GET    | `/blob/:id/view`               | false   | View blob inline (opens in browser)   |
 | DELETE | `/blob/:id`                    | true    | Delete blob                           |
-| PUT    | `/{bucket}/{key}`              | true    | S3 PutObject                          |
-| GET    | `/{bucket}/{key}`              | true    | S3 GetObject (supports Range)         |
+| PUT    | `/{bucket}/{key}`              | true    | S3 PutObject (`X-Amz-Copy-Source` = Copy, `X-Amz-Acl: public-read`, `X-Blob-Expires-At` RFC3339) |
+| GET    | `/{bucket}/{key}`              | true*   | S3 GetObject (supports Range; *anonymous when public) |
 | DELETE | `/{bucket}/{key}`              | true    | S3 DeleteObject                       |
-| HEAD   | `/{bucket}/{key}`              | true    | S3 HeadObject                         |
+| HEAD   | `/{bucket}/{key}`              | true*   | S3 HeadObject (*anonymous when public) |
 | PUT    | `/{bucket}/`                   | true    | S3 CreateBucket (implicit, no-op)     |
 | GET    | `/`                            | false   | S3 ListBuckets (with auth) / Hello    |
 | GET    | `/{bucket}?list-type=2`        | true    | S3 ListObjectsV2                      |
+| POST   | `/{bucket}/{key}?uploads`      | true    | S3 CreateMultipartUpload              |
+| PUT    | `/{bucket}/{key}?partNumber=N&uploadId=U` | true | S3 UploadPart (server-hashed, min `BLOB_MIN_CHUNK_SIZE`) |
+| POST   | `/{bucket}/{key}?uploadId=U`   | true    | S3 CompleteMultipartUpload            |
+| DELETE | `/{bucket}/{key}?uploadId=U`   | true    | S3 AbortMultipartUpload               |
+| GET    | `/{bucket}/{key}?uploadId=U`   | true    | S3 ListParts (no ETags: no cross-process resume) |
+| GET    | `/{bucket}?uploads`            | true    | S3 ListMultipartUploads               |
 
 ### S3 compatibility
 
@@ -557,13 +565,13 @@ Use the HTTP status code and error details to distinguish missing objects, inval
 
 ### Compatibility Notes
 
-- Private S3 operations use AWS Signature Version 4 (SigV4).
+- Private S3 operations use AWS Signature Version 4 (SigV4), via header or presigned query string.
 - Use `forcePathStyle: true` when connecting to a custom endpoint.
-- Buckets may be implicit and derived from stored objects; explicit bucket creation may not be necessary or supported.
-- ETags should be treated as opaque identifiers and not assumed to be MD5 hashes.
-- Standard AWS SDK commands work only when the corresponding operations and behaviors are implemented by the server.
-- Large-file multipart uploads require explicit multipart support; use Blob's dedicated multipart API if applicable.
+- Buckets are implicit (a bucket exists once it holds an object); `CreateBucket` returns 200 as a no-op.
+- ETags carry the content hash (opaque to clients, not MD5).
+- Multipart uploads work through S3 (`CreateMultipartUpload`/`UploadPart`/`Complete`/`Abort`, `ListParts`/`ListMultipartUploads`); parts must respect `BLOB_MIN_CHUNK_SIZE`, and `ListParts` omits ETags (no cross-process resume).
+- Copy with `X-Amz-Metadata-Directive: REPLACE` swaps metadata; default copies it.
+- `X-Amz-Acl: public-read` makes objects world-readable (anonymous GET/HEAD); `X-Blob-Expires-At` (RFC3339) sets per-object expiry, enforced as `NoSuchKey`.
 - Keep access keys and secret keys on the server. Do not expose them in frontend applications.
-- Presigned URLs should be tested against the deployed server before relying on them in production.
 
 For additional service-specific endpoints, including health checks, metrics, and Blob's chunked upload workflow, see the corresponding API documentation.
