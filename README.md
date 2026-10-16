@@ -42,6 +42,28 @@ ghcr.io/sebastianjnuwu/blob:latest
 * `--name blob`
   Gives the container an easy name for management.
 
+## Authentication
+
+There is no master token or secret stored in environment variables. API keys are stored in the database and managed through the CLI. Keys are shown only once at creation; only their hashes are stored.
+
+```bash
+go run . admin create --label test --scopes read,write [--s3 | --bearer]
+go run . admin list
+go run . admin revoke <id>
+```
+
+Private routes accept either a bearer token or an AWS SigV4 signature:
+
+```bash
+curl -H "Authorization: Bearer <api-key>" http://localhost:3000/blob
+```
+
+The server is S3-compatible, supporting standard AWS SDKs with SigV4 authentication
+(header or presigned query string) and the operations below on `/{bucket}/{key}`,
+as well as `ListBuckets` and `ListObjectsV2`.
+
+See [`examples/s3/`](examples/s3/) for a working demo using `@aws-sdk/client-s3`.
+
 ## Routes
 
 | Method | Route                          | Private | Description                          |
@@ -58,10 +80,37 @@ ghcr.io/sebastianjnuwu/blob:latest
 | GET    | `/blob/:id/download`           | false   | Download blob file (supports Range)   |
 | GET    | `/blob/:id/view`               | false   | View blob inline (opens in browser)   |
 | DELETE | `/blob/:id`                    | true    | Delete blob                           |
-| GET    | `/metrics`                     | true    | Storage and usage metrics (JSON)      |
-| GET    | `/health`                      | false   | Healthcheck (DB, Redis, storage)      |
-| GET    | `/version`                     | false   | Build version                         |
-| GET    | `/`                            | false   | Hello, World                          |
+| PUT    | `/{bucket}/{key}`              | true    | S3 PutObject (`X-Amz-Copy-Source` = Copy, `X-Amz-Acl: public-read`, `X-Blob-Expires-At` RFC3339) |
+| GET    | `/{bucket}/{key}`              | true*   | S3 GetObject (supports Range; *anonymous when public) |
+| DELETE | `/{bucket}/{key}`              | true    | S3 DeleteObject                       |
+| HEAD   | `/{bucket}/{key}`              | true*   | S3 HeadObject (*anonymous when public) |
+| PUT    | `/{bucket}/`                   | true    | S3 CreateBucket (implicit, no-op)     |
+| GET    | `/`                            | false   | S3 ListBuckets (with auth) / Hello    |
+| GET    | `/{bucket}?list-type=2`        | true    | S3 ListObjectsV2                      |
+| POST   | `/{bucket}/{key}?uploads`      | true    | S3 CreateMultipartUpload              |
+| PUT    | `/{bucket}/{key}?partNumber=N&uploadId=U` | true | S3 UploadPart (server-hashed, min `BLOB_MIN_CHUNK_SIZE`) |
+| POST   | `/{bucket}/{key}?uploadId=U`   | true    | S3 CompleteMultipartUpload            |
+| DELETE | `/{bucket}/{key}?uploadId=U`   | true    | S3 AbortMultipartUpload               |
+| GET    | `/{bucket}/{key}?uploadId=U`   | true    | S3 ListParts (no ETags: no cross-process resume) |
+| GET    | `/{bucket}?uploads`            | true    | S3 ListMultipartUploads               |
+
+### S3 compatibility
+
+Besides Bearer tokens, every private route accepts AWS SigV4 signatures, so
+standard AWS SDKs work without custom clients:
+
+```js
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+const S3 = new S3Client({
+  region: "us-east-1",
+  endpoint: "http://localhost:3000",
+  forcePathStyle: true, // path style: /bucket/key (not bucket.host/key)
+  credentials: { accessKeyId: "<access-key>", secretAccessKey: "<secret>" },
+});
+
+await S3.send(new PutObjectCommand({ Bucket: "demo", Key: "hello.txt", Body: "hi" }));
+```
 
 ## Database Schema
 
@@ -83,423 +132,479 @@ ghcr.io/sebastianjnuwu/blob:latest
 | expires_at     | TIMESTAMPTZ | Yes      | Optional expiration date     |
 | deleted_at     | TIMESTAMPTZ | Yes      | Soft delete timestamp        |
 
+## API keys (`api_keys` table)
+
+| Column     | Type        | Nullable | Description                        |
+| ---------- | ----------- | -------- | ---------------------------------- |
+| id         | UUID        | No       | Unique identifier                  |
+| label      | TEXT        | No       | Human label (e.g. an admin email)  |
+| token_hash | TEXT        | Yes      | SHA256 of bearer tokens (one side) |
+| access_key_id | TEXT     | Yes      | S3 access key id (other side)  |
+| secret     | TEXT        | Yes      | S3 secret, server-side only        |
+| scopes     | TEXT        | No       | `read,write,delete,all,admin`      |
+| active     | BOOLEAN     | No       | Revoke by setting false            |
+| created_at | TIMESTAMPTZ | No       | Creation timestamp                 |
+| updated_at | TIMESTAMPTZ | No       | Last update timestamp              |
+
+Server-side secrets (e.g. the HMAC key for signed URLs) live in the
+`settings` table (`key`/`value`) and are created automatically on first boot.
+
 ## Usage Examples
 
-### GET `/`
+### S3-Compatible API
+
+Blob supports S3-compatible clients through AWS Signature Version 4 (SigV4), allowing applications to interact with stored objects using standard AWS SDKs.
+
+#### Configuration
+
+Set the following environment variables:
+
+```env
+S3_ENDPOINT=http://localhost:3000
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+S3_BUCKET=demo
+```
+
+Create S3 credentials using the CLI:
 
 ```bash
-curl http://localhost:3000/
+go run . admin create --label demo --scopes read,write --s3
 ```
 
-Response:
-
-```json
-{
-  "message": "Hello, World!"
-}
-```
-
-### GET `/health`
+Install the AWS SDK:
 
 ```bash
-curl http://localhost:3000/health
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
-Response:
+The examples below use Node.js with ES modules.
 
-```json
-{
-  "status": "ok"
-}
-```
+#### Initialize the Client
 
-### GET `/metrics`
+Create `examples/s3/s3.js`:
 
-#### Example
+```javascript
+import { S3Client } from "@aws-sdk/client-s3";
 
-```bash
-curl -X GET http://localhost:3000/metrics \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more"
-```
-
-Response:
-```json
-{
-    "buckets": [
-        {
-            "blobs": 9,
-            "name": "testbucket",
-            "size": "8.32 MB",
-            "visibility": {
-                "private": 9,
-                "public": 0
-            }
-        }
-    ],
-    "last_upload": {
-        "bucket": "testbucket",
-        "created_at": "2026-03-08T09:59:47.420216-03:00",
-        "filename": "video.mp4",
-        "id": "33fc6434-ab9c-43ad-b7f6-63bb7f92704c"
-    },
-    "summary": {
-        "average_size": "946.49 KB",
-        "max_size": "946.49 KB",
-        "min_size": "946.49 KB",
-        "multipart_completed": 4,
-        "storage_free": "1015.68 MB",
-        "storage_max": "1.00 GB",
-        "total_blobs": 9,
-        "total_downloads": 0,
-        "total_views": 0,
-        "total_size": "8.32 MB"
-    },
-    "types": [
-        {
-            "count": 9,
-            "mime": "video/mp4",
-            "size": "8.32 MB"
-        }
-    ]
-}
-```
-
-### PUT `/blob`
-
-Uploads a new blob.
-
-#### Accepted Fields
-
-| Field      | Required | Type    | Description                                                        |
-| ---------- | -------- | ------- | ------------------------------------------------------------------ |
-| file       | Yes      | file    | File to upload                                                     |
-| bucket     | Yes      | string  | Logical group/path (supports subfolders, e.g., "folder/subfolder") |
-| filename   | No       | string  | Custom filename                                                    |
-| public     | No       | boolean | Accepts true, false, 0, 1 (default: true)                          |
-| expires_at | No       | string  | RFC3339 date                                                       |
-| metadata   | No       | string  | JSON metadata                                                      |
-
-#### Example
-
-```bash
-curl -X PUT http://localhost:3000/blob \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more" \
-  -F "file=@README.md" \
-  -F "bucket=folder/subfolder" \
-  -F "filename=custom_name.txt" \
-  -F "public=false" \
-  -F "expires_at=2026-03-02T12:00:00Z" \
-  -F "metadata={\"author\":\"user\",\"desc\":\"test file\"}"
-```
-
-Response:
-
-```json
-{
-  "id": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "bucket": "test",
-  "filename": "custom_name.txt",
-  "mime": "application/octet-stream",
-  "size": 3625,
-  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "path": "test/1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "public": false,
-  "download_count": 0,
-  "view_count": 0,
-  "created_at": "2026-03-07T12:31:05.2082654-03:00",
-  "updated_at": "2026-03-07T12:31:05.2082654-03:00",
-  "expires_at": "2026-03-02T12:00:00Z",
-  "metadata": {
-    "author": "user",
-    "desc": "test file"
-  }
-}
-```
-
-
-### Multipart/Chunked Upload (for huge files)
-
-#### 1. Initiate upload:
-```bash
-curl -X POST http://localhost:3000/blob/initiate \
-  -H "Authorization: Bearer <api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"bucket":"bigfiles","filename":"video_20tb.mkv","size":21990232555520}'
-# Response: { "uploadId": "abc123" }
-```
-
-Session ownership is derived from the authenticated `Authorization` bearer
-token, so there is no client-supplied user identifier. The declared `size`
-must not exceed `BLOB_MAX_UPLOAD_SIZE_BYTES` and is checked against
-`BLOB_MAX_STORAGE_SIZE` at initiate time.
-
-#### 2. Upload each chunk (with integrity check):
-```bash
-CHUNK_HASH=$(sha256sum chunk_0.bin | awk '{print $1}')
-curl -X PUT http://localhost:3000/blob/abc123/chunk \
-  -H "Authorization: Bearer <api-key>" \
-  -H "X-Chunk-Index: 0" \
-  -H "X-Chunk-Hash: $CHUNK_HASH" \
-  --data-binary "@chunk_0.bin"
-# Repeat for each chunk, incrementing index and hash
-```
-
-Chunks accumulate against `BLOB_MAX_UPLOAD_SIZE_BYTES`; exceeding it rejects
-the chunk.
-
-#### 3. (Optional) Check status:
-```bash
-curl -H "Authorization: Bearer <api-key>" http://localhost:3000/blob/abc123/status
-```
-
-#### 4. Complete upload (with final hash):
-```bash
-FINAL_HASH=$(sha256sum full_file.bin | awk '{print $1}')
-curl -X POST http://localhost:3000/blob/abc123/complete \
-  -H "Authorization: Bearer <api-key>" \
-  -H "X-Final-Hash: $FINAL_HASH"
-```
-
-After completion, the file is available as a normal blob for download and management.
-
-#### Chunk Size Limits
-
-Configure minimum and maximum chunk size in `.env`:
-
-```
-BLOB_MIN_CHUNK_SIZE=1048576   # 1MB
-BLOB_MAX_CHUNK_SIZE=20971520  # 20MB
-```
-Chunks outside these limits will be rejected.
-
-#### Integrity Headers
-
-- `X-Chunk-Hash`: Required for each chunk (SHA256 hex of chunk)
-- `X-Final-Hash`: Required when completing upload (SHA256 hex of full file)
-
-#### Automatic Cleanup
-
-Abandoned multipart uploads are cleaned up automatically after a configurable threshold (see `.env`).
-
-### GET `/blob`
-
-Returns paginated blobs.
-
-#### Query Parameters
-
-| Parameter | Required | Type   | Description              |
-| --------- | -------- | ------ | ------------------------ |
-| bucket    | No       | string | Filter by bucket         |
-| search    | No       | string | Search filename          |
-| page      | No       | int    | Page number (default: 1) |
-| page_size | No       | int    | Items per page           |
-
-#### Example
-
-```bash
-curl "http://localhost:3000/blob?bucket=test&search=report&page=1&page_size=10"
-```
-
-Response:
-
-```json
-{
-  "meta": {
-    "page": 1,
-    "per_page": 10,
-    "count": 1,
-    "pages": 1,
-    "total": 42
+export const s3 = new S3Client({
+  region: "us-east-1",
+  endpoint: process.env.S3_ENDPOINT,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
-  "blobs": [
-    {
-      "id": "...",
-      "bucket": "test",
-      "filename": "report1.pdf",
-      "mime": "application/pdf",
-      "size": 12345,
-      "hash": "...",
-      "path": "test/...",
-      "public": true,
-      "download_count": 0,
-      "view_count": 0,
-      "created_at": "2026-03-07T12:31:05.2082654-03:00",
-      "updated_at": "2026-03-07T12:31:05.2082654-03:00",
-      "expires_at": null,
-      "metadata": {
-        "author": "user"
-      }
-    }
-    // ...more blobs
-  ]
+});
+```
+
+Make sure the environment variables are loaded before running the examples.
+
+#### List Buckets
+
+Retrieve the buckets available through the S3 API:
+
+```javascript
+import { ListBucketsCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+const response = await s3.send(new ListBucketsCommand({}));
+
+console.log(response.Buckets?.map((bucket) => bucket.Name));
+```
+
+#### Upload a Text Object
+
+Upload a small text object without creating a local file:
+
+```javascript
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+const response = await s3.send(
+  new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "hello.txt",
+    Body: "Hello from Blob!",
+    ContentType: "text/plain; charset=utf-8",
+  })
+);
+
+console.log("Object uploaded successfully.");
+console.log("ETag:", response.ETag);
+```
+
+#### Upload a File
+
+Upload a local file using a readable stream:
+
+```javascript
+import { createReadStream, statSync } from "node:fs";
+import { basename } from "node:path";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+const filePath = "./files/document.pdf";
+const fileName = basename(filePath);
+
+const response = await s3.send(
+  new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: fileName,
+    Body: createReadStream(filePath),
+    ContentLength: statSync(filePath).size,
+    ContentType: "application/pdf",
+  })
+);
+
+console.log("File uploaded successfully.");
+console.log("Key:", fileName);
+console.log("ETag:", response.ETag);
+```
+
+The object key can include directories, such as `documents/2026/document.pdf`. These are key prefixes, not necessarily real filesystem directories or independently created folders.
+
+#### Download an Object
+
+Download an object and save it to disk:
+
+```javascript
+import { createWriteStream } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+const key = "document.pdf";
+const destination = "./downloads/document.pdf";
+
+const response = await s3.send(
+  new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: key,
+  })
+);
+
+if (!response.Body) {
+  throw new Error("The object has no response body.");
 }
+
+await mkdir(dirname(destination), { recursive: true });
+await pipeline(response.Body, createWriteStream(destination));
+
+console.log("File downloaded successfully.");
+console.log("Content-Type:", response.ContentType);
+console.log("Content-Length:", response.ContentLength);
 ```
 
-### GET `/blob/:id`
+#### Read an Object as Text
 
-Returns blob metadata as JSON (does not download the file).
+Retrieve a text object directly into memory:
 
-#### Example
+```javascript
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
 
-```bash
-curl http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630
+const response = await s3.send(
+  new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "hello.txt",
+  })
+);
+
+if (!response.Body) {
+  throw new Error("The object has no response body.");
+}
+
+const content = await response.Body.transformToString();
+
+console.log(content);
 ```
 
-Response:
+Use this approach for small text objects. For large files, prefer streaming the response to disk.
 
-```json
-{
-  "id": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "bucket": "test",
-  "filename": "custom_name.txt",
-  "mime": "application/octet-stream",
-  "size": 3625,
-  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "path": "test/1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "public": false,
-  "download_count": 0,
-  "view_count": 0,
-  "created_at": "2026-03-07T12:31:05.2082654-03:00",
-  "updated_at": "2026-03-07T12:31:05.2082654-03:00",
-  "expires_at": "2026-03-02T12:00:00Z",
-  "metadata": {
-    "author": "user",
-    "desc": "test file"
+#### List Objects
+
+List objects in a bucket:
+
+```javascript
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+const response = await s3.send(
+  new ListObjectsV2Command({
+    Bucket: process.env.S3_BUCKET,
+    Prefix: "",
+    MaxKeys: 100,
+  })
+);
+
+console.log(
+  response.Contents?.map((object) => ({
+    key: object.Key,
+    size: object.Size,
+    lastModified: object.LastModified,
+    etag: object.ETag,
+  }))
+);
+
+console.log("More objects:", response.IsTruncated);
+```
+
+Use `Prefix` to filter by key prefix:
+
+```javascript
+const response = await s3.send(
+  new ListObjectsV2Command({
+    Bucket: process.env.S3_BUCKET,
+    Prefix: "documents/",
+    MaxKeys: 100,
+  })
+);
+```
+
+#### List All Objects with Pagination
+
+For buckets containing many objects, use the continuation token to retrieve subsequent pages:
+
+```javascript
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+let continuationToken;
+
+do {
+  const response = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET,
+      MaxKeys: 1000,
+      ContinuationToken: continuationToken,
+    })
+  );
+
+  for (const object of response.Contents ?? []) {
+    console.log({
+      key: object.Key,
+      size: object.Size,
+      lastModified: object.LastModified,
+    });
+  }
+
+  continuationToken = response.IsTruncated
+    ? response.NextContinuationToken
+    : undefined;
+} while (continuationToken);
+```
+
+This example assumes the server implements standard `ListObjectsV2` continuation-token behavior.
+
+#### Check Whether an Object Exists
+
+Use `HeadObject` to check object availability without downloading its contents:
+
+```javascript
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+try {
+  const response = await s3.send(
+    new HeadObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: "document.pdf",
+    })
+  );
+
+  console.log("Object exists.");
+  console.log("Size:", response.ContentLength);
+  console.log("Content-Type:", response.ContentType);
+} catch (error) {
+  if (error.$metadata?.httpStatusCode === 404) {
+    console.log("Object not found.");
+  } else {
+    throw error;
   }
 }
 ```
 
-### POST `/blob/:id`
+#### Get Object Metadata
 
-Edits blob fields: metadata, public/private, expiration date, bucket, and filename. Requires authentication.
+Retrieve metadata without downloading the object:
 
-#### Request Body
+```javascript
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
 
-| Field      | Required | Type    | Description                                 |
-|------------|----------|---------|---------------------------------------------|
-| metadata   | No       | object  | New metadata (JSON object)                  |
-| public     | No       | boolean | Set blob as public or private               |
-| expires_at | No       | string  | RFC3339 expiration date                     |
-| bucket     | No       | string  | Change bucket name                          |
-| filename   | No       | string  | Change filename                             |
+const response = await s3.send(
+  new HeadObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "document.pdf",
+  })
+);
 
-#### Example
-
-```bash
-curl -X POST http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630 \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "metadata": {"author": "newuser", "desc": "updated file"},
-    "public": true,
-    "expires_at": "2026-04-01T12:00:00Z",
-    "bucket": "newbucket",
-    "filename": "new_name.txt"
-  }'
+console.log({
+  contentType: response.ContentType,
+  contentLength: response.ContentLength,
+  lastModified: response.LastModified,
+  etag: response.ETag,
+  metadata: response.Metadata,
+});
 ```
 
-Response:
+#### Copy an Object
 
-```json
-{
-  "id": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "bucket": "newbucket",
-  "filename": "new_name.txt",
-  "mime": "application/octet-stream",
-  "size": 3625,
-  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "path": "newbucket/1ddff9d2-3aa1-485d-8082-e484c62ff630",
-  "public": true,
-  "download_count": 0,
-  "view_count": 0,
-  "created_at": "2026-03-07T12:31:05.2082654-03:00",
-  "updated_at": "2026-03-07T12:31:05.2082654-03:00",
-  "expires_at": "2026-04-01T12:00:00Z",
-  "metadata": {
-    "author": "newuser",
-    "desc": "updated file"
-  }
+Copy an object to another key within the same bucket:
+
+```javascript
+import { CopyObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+await s3.send(
+  new CopyObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "documents/document-copy.pdf",
+    CopySource: `${process.env.S3_BUCKET}/document.pdf`,
+  })
+);
+
+console.log("Object copied successfully.");
+```
+
+This operation requires server-side `CopyObject` support. URL-encode the source key when it contains special characters.
+
+#### Generate a Presigned Download URL
+
+Generate a temporary URL that allows a client to download an object without receiving your S3 credentials:
+
+```javascript
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { s3 } from "./s3.js";
+
+const url = await getSignedUrl(
+  s3,
+  new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "document.pdf",
+  }),
+  { expiresIn: 900 }
+);
+
+console.log(url);
+```
+
+The URL is intended to remain valid for 15 minutes. This requires the server to support the corresponding presigned SigV4 requests.
+
+#### Generate a Presigned Upload URL
+
+Allow a client to upload a file directly without exposing your credentials:
+
+```javascript
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { s3 } from "./s3.js";
+
+const url = await getSignedUrl(
+  s3,
+  new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "uploads/image.png",
+    ContentType: "image/png",
+  }),
+  { expiresIn: 900 }
+);
+
+console.log(url);
+```
+
+The client must send a `PUT` request to the generated URL. If `ContentType` is included when signing, the upload must use the corresponding content type. This requires support for presigned SigV4 requests.
+
+#### Multipart Upload
+
+Upload a large file in parts (each part must respect `BLOB_MIN_CHUNK_SIZE`):
+
+```javascript
+import {
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+} from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+import { readFileSync } from "node:fs";
+
+const Bucket = process.env.S3_BUCKET;
+const Key = "video.mp4";
+const Body = readFileSync("./video.mp4");
+const half = Math.ceil(Body.length / 2);
+
+const { UploadId } = await s3.send(new CreateMultipartUploadCommand({ Bucket, Key }));
+const parts = [];
+for (const [i, chunk] of [Body.subarray(0, half), Body.subarray(half)].entries()) {
+  const { ETag } = await s3.send(
+    new UploadPartCommand({ Bucket, Key, UploadId, PartNumber: i + 1, Body: chunk })
+  );
+  parts.push({ ETag, PartNumber: i + 1 });
+}
+await s3.send(new CompleteMultipartUploadCommand({ Bucket, Key, UploadId, MultipartUpload: { Parts: parts } }));
+
+console.log("Multipart upload completed.");
+```
+
+Abort with `AbortMultipartUploadCommand`; list parts/uploads with `ListPartsCommand` / `ListMultipartUploadsCommand`.
+
+#### Delete an Object
+
+Delete an object by its key:
+
+```javascript
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+await s3.send(
+  new DeleteObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: "document.pdf",
+  })
+);
+
+console.log("Delete request completed.");
+```
+
+S3-compatible delete operations may succeed even when the object does not exist. Check the server's behavior if you need to distinguish those cases.
+
+#### Error Handling
+
+Handle common errors when interacting with Blob:
+
+```javascript
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { s3 } from "./s3.js";
+
+try {
+  await s3.send(
+    new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: "missing.txt",
+    })
+  );
+} catch (error) {
+  console.error("S3 request failed:", error.message);
+  console.error("HTTP status:", error.$metadata?.httpStatusCode);
+  console.error("Request ID:", error.$metadata?.requestId);
 }
 ```
 
+Use the HTTP status code and error details to distinguish missing objects, invalid credentials, insufficient permissions, and other failures.
 
-### GET `/blob/:id/download`
+### Compatibility Notes
 
-#### Downloading blobs
+- Private S3 operations use AWS Signature Version 4 (SigV4), via header or presigned query string.
+- Use `forcePathStyle: true` when connecting to a custom endpoint.
+- Buckets are implicit (a bucket exists once it holds an object); `CreateBucket` returns 200 as a no-op.
+- ETags carry the content hash (opaque to clients, not MD5).
+- Multipart uploads work through S3 (`CreateMultipartUpload`/`UploadPart`/`Complete`/`Abort`, `ListParts`/`ListMultipartUploads`); parts must respect `BLOB_MIN_CHUNK_SIZE`, and `ListParts` omits ETags (no cross-process resume).
+- Copy with `X-Amz-Metadata-Directive: REPLACE` swaps metadata; default copies it.
+- `X-Amz-Acl: public-read` makes objects world-readable (anonymous GET/HEAD); `X-Blob-Expires-At` (RFC3339) sets per-object expiry, enforced as `NoSuchKey`.
+- Keep access keys and secret keys on the server. Do not expose them in frontend applications.
 
-Downloads support HTTP Range requests (`Range: bytes=start-end`), returning
-`206 Partial Content`, which enables pausable downloads, video/audio seeking and
-streaming of large files.
-
-For **public blobs**, simply access the route:
-
-```bash
-curl -X GET \
-  http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download \
-  -o downloaded_file.ext
-```
-
-For **private blobs**, you must provide one of the following:
-
-- A **signed URL** (recommended). Generate one with `POST /blob/:id/sign`:
-
-  ```bash
-  curl -X POST http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/sign \
-    -H "Authorization: Bearer YOUR_TOKEN_HERE"
-  ```
-
-  Response:
-  ```json
-  {
-    "id": "1ddff9d2-3aa1-485d-8082-e484c62ff630",
-    "expires_at": "2026-08-06T12:30:00Z",
-    "ttl": 900,
-    "download": "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download?expires=1775565000&signature=<hmac>",
-    "view": "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/view?expires=1775565000&signature=<hmac>"
-  }
-  ```
-
-  Then use the returned URL (it expires after `BLOB_SIGNED_URL_TTL`):
-
-  ```bash
-  curl -X GET "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download?expires=1775565000&signature=<hmac>" \
-    -o downloaded_file.ext
-  ```
-
-- The SHA256 hash of the file as a query parameter (legacy fallback):
-
-  ```bash
-  curl -X GET \
-    "http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download?hash=YOUR_FILE_HASH" \
-    -o downloaded_file.ext
-  ```
-
-- Or a valid authentication token in the Authorization header:
-
-  ```bash
-  curl -X GET \
-    http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630/download \
-    -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-    -o downloaded_file.ext
-  ```
-
-If none of these is provided for a private blob, the download will be denied.
-
-### DELETE `/blob/:id`
-
-Deletes a blob, its metadata, and the file from disk. Requires authentication.
-
-#### Example
-
-```bash
-curl -X DELETE http://localhost:3000/blob/1ddff9d2-3aa1-485d-8082-e484c62ff630 \
-  -H "Authorization: Bearer change-me-with-32-characters-or-more"
-```
-
-Response:
-
-```json
-{
-  "message": "Blob deleted successfully"
-}
-```
+For additional service-specific endpoints, including health checks, metrics, and Blob's chunked upload workflow, see the corresponding API documentation.

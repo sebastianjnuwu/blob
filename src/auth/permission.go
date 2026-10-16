@@ -1,10 +1,7 @@
 package auth
 
 import (
-	"crypto/subtle"
 	"strings"
-
-	"blob/src/config"
 )
 
 // Permission identifies an allowed operation.
@@ -15,12 +12,14 @@ const (
 	PermWrite  Permission = "write"
 	PermDelete Permission = "delete"
 	PermAll    Permission = "all"
+	PermAdmin  Permission = "admin"
 )
 
 // APIKey is a token with an optional permission scope.
 type APIKey struct {
-	Token string
-	Perms map[Permission]bool
+	Token     string
+	AccessKey string
+	Perms     map[Permission]bool
 }
 
 // HasPerm reports whether the key allows the given operation.
@@ -47,60 +46,6 @@ func parsePermissions(raw string) map[Permission]bool {
 // defaultPermissions grants every operation.
 func defaultPermissions() map[Permission]bool {
 	return map[Permission]bool{PermAll: true}
-}
-
-// Keys returns the API keys configured for the process.
-// Entries are separated by ';' (not ',') because the permission list within an
-// entry is itself comma-separated: "k1:read,write;k2:read".
-func Keys() []APIKey {
-	var keys []APIKey
-	if config.Env == nil {
-		return keys
-	}
-	for _, entry := range strings.Split(config.Env.APIKeys, ";") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		key := APIKey{Token: entry, Perms: defaultPermissions()}
-		if idx := strings.IndexByte(entry, ':'); idx > 0 {
-			key.Token = entry[:idx]
-			key.Perms = parsePermissions(entry[idx+1:])
-		}
-		keys = append(keys, key)
-	}
-	return keys
-}
-
-// matchKey returns the API key matching the raw bearer token, or nil.
-func matchKey(bearer string) *APIKey {
-	keys := Keys()
-	for i := range keys {
-		if subtle.ConstantTimeCompare([]byte(keys[i].Token), []byte(bearer)) == 1 {
-			return &keys[i]
-		}
-	}
-	return nil
-}
-
-// masterToken is the legacy shared secret; it grants full access.
-func masterToken() string {
-	if config.Env == nil {
-		return ""
-	}
-	return config.Env.TokenSecret
-}
-
-// Verify returns the API key when the bearer token is valid (either the master
-// secret or a configured API key). Returns nil otherwise.
-func Verify(bearerToken string) *APIKey {
-	if bearerToken == "" {
-		return nil
-	}
-	if masterToken() != "" && subtle.ConstantTimeCompare([]byte(bearerToken), []byte(masterToken())) == 1 {
-		return &APIKey{Token: bearerToken, Perms: defaultPermissions()}
-	}
-	return matchKey(bearerToken)
 }
 
 // RequirePermission checks that the given key permits the operation.

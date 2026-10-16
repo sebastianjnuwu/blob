@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 )
 
@@ -23,6 +24,6 @@ func DeleteBlobController(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"message": "Blob deleted successfully"}); err != nil {
-		functions.Error("failed to encode delete success json: %v", err)
+		logger.Error("failed to encode delete success json: %v", err)
 	}
 }

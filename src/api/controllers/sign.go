@@ -10,6 +10,7 @@ import (
 	"blob/src/auth"
 	"blob/src/config"
 	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/services"
 )
 
@@ -66,6 +67,6 @@ func SignBlobController(w http.ResponseWriter, r *http.Request) {
 		"download":   base + "/blob/" + id.String() + "/download?expires=" + strconv.FormatInt(expiresUnix, 10) + "&signature=" + downloadSig,
 		"view":       base + "/blob/" + id.String() + "/view?expires=" + strconv.FormatInt(expiresUnix, 10) + "&signature=" + viewSig,
 	}); err != nil {
-		functions.Error("failed to encode sign json: %v", err)
+		logger.Error("failed to encode sign json: %v", err)
 	}
 }

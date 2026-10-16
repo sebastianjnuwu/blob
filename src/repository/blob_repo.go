@@ -45,8 +45,34 @@ func (r *BlobRepository) GetByHash(ctx context.Context, hash string) (*models.Bl
 type ListFilter struct {
 	Bucket   string
 	Search   string
+	Prefix   string
+	OrderKey bool
 	Page     int
 	PageSize int
+}
+
+// GetByBucketFilename returns the most recent live blob for an exact bucket+filename.
+func (r *BlobRepository) GetByBucketFilename(ctx context.Context, bucket, filename string) (*models.Blob, error) {
+	var blob models.Blob
+	if err := r.db.WithContext(ctx).Where("bucket = ? AND filename = ? AND deleted_at IS NULL", bucket, filename).Order("created_at DESC").First(&blob).Error; err != nil {
+		return nil, err
+	}
+	return &blob, nil
+}
+
+// Bucket holds a bucket name with its creation time (oldest object).
+type Bucket struct {
+	Name      string
+	CreatedAt time.Time
+}
+
+// Buckets lists distinct buckets with live objects, oldest first.
+func (r *BlobRepository) Buckets(ctx context.Context) ([]Bucket, error) {
+	var out []Bucket
+	if err := r.db.WithContext(ctx).Model(&models.Blob{}).Select("bucket AS name, MIN(created_at) AS created_at").Where("deleted_at IS NULL").Group("bucket").Order("name").Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // List returns a page of blobs and the total number of matches.
@@ -61,12 +87,19 @@ func (r *BlobRepository) List(ctx context.Context, f ListFilter) ([]models.Blob,
 		f.PageSize = 100
 	}
 
-	query := r.db.WithContext(ctx).Model(&models.Blob{})
+	query := r.db.WithContext(ctx).Model(&models.Blob{}).Where("deleted_at IS NULL")
 	if f.Bucket != "" {
 		query = query.Where("bucket = ?", f.Bucket)
 	}
 	if f.Search != "" {
 		query = query.Where("LOWER(filename) LIKE ?", "%"+strings.ToLower(f.Search)+"%")
+	}
+	if f.Prefix != "" {
+		query = query.Where("filename LIKE ?", f.Prefix+"%")
+	}
+	order := "created_at DESC"
+	if f.OrderKey {
+		order = "filename ASC"
 	}
 
 	var total int64
@@ -75,7 +108,7 @@ func (r *BlobRepository) List(ctx context.Context, f ListFilter) ([]models.Blob,
 	}
 
 	var blobs []models.Blob
-	if err := query.Order("created_at DESC").Offset((f.Page - 1) * f.PageSize).Limit(f.PageSize).Find(&blobs).Error; err != nil {
+	if err := query.Order(order).Offset((f.Page - 1) * f.PageSize).Limit(f.PageSize).Find(&blobs).Error; err != nil {
 		return nil, 0, err
 	}
 	return blobs, total, nil

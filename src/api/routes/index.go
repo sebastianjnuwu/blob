@@ -10,8 +10,19 @@ import (
 	"strings"
 )
 
-func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
+// hasS3Marker reports whether a root request looks like an S3 call.
+func hasS3Marker(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return true
+	}
+	if _, ok := r.URL.Query()["list-type"]; ok {
+		return true
+	}
+	h := r.Header.Get("Authorization")
+	return strings.HasPrefix(h, "AWS4-HMAC-SHA256 ") || strings.HasPrefix(h, "Bearer ")
+}
 
+func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 	// helper para forçar método HTTP
 	methodHandler := func(method string, h http.Handler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -23,8 +34,14 @@ func RegisterRoutes(mux *http.ServeMux, limiter *middleware.RateLimiter) {
 		}
 	}
 
-	// GET / (public)
-	mux.HandleFunc("/", GETHandler)
+	// GET / (public root) — S3 ListBuckets/ListObjects when S3-flavored.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" || hasS3Marker(r) {
+			controllers.S3Handler(w, r)
+			return
+		}
+		GETHandler(w, r)
+	})
 
 	// GET /health (public)
 	mux.Handle(

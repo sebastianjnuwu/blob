@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"blob/src/functions"
+	"blob/src/lib/logger"
 )
 
 // Config holds all runtime configuration loaded from environment variables.
@@ -16,9 +17,6 @@ type Config struct {
 	DatabaseURL            string
 	RedisURL               string
 	StoragePath            string
-	TokenSecret            string
-	APIKeys                string
-	SignedURLSecret        string
 	CORSOrigins            string
 	TrustProxy             bool
 	PublicURL              string
@@ -52,7 +50,7 @@ func getenvInt(key string, fallback int) int {
 		if parsed, err := strconv.Atoi(v); err == nil {
 			return parsed
 		}
-		functions.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -62,7 +60,7 @@ func getenvInt64(key string, fallback int64) int64 {
 		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return parsed
 		}
-		functions.Warn("[CONFIG] Invalid integer for %s: %s (using default %d)", key, v, fallback)
+		logger.Environment.Warn("Invalid integer for %s: %s (using default %d)", key, v, fallback)
 	}
 	return fallback
 }
@@ -72,7 +70,7 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
 		}
-		functions.Warn("[CONFIG] Invalid duration for %s: %s (using default %v)", key, v, fallback)
+		logger.Environment.Warn("Invalid duration for %s: %s (using default %v)", key, v, fallback)
 	}
 	return fallback
 }
@@ -82,7 +80,7 @@ func getenvBool(key string, fallback bool) bool {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
 		}
-		functions.Warn("[CONFIG] Invalid boolean for %s: %s (using default %t)", key, v, fallback)
+		logger.Environment.Warn("Invalid boolean for %s: %s (using default %t)", key, v, fallback)
 	}
 	return fallback
 }
@@ -95,9 +93,6 @@ func Load() *Config {
 		DatabaseURL:            getenv("BLOB_DATABASE_URL", ""),
 		RedisURL:               getenv("REDIS_URL", ""),
 		StoragePath:            getenv("BLOB_STORAGE_PATH", "storage/uploads"),
-		TokenSecret:            getenv("BLOB_TOKEN_SECRET", ""),
-		APIKeys:                getenv("BLOB_API_KEYS", ""),
-		SignedURLSecret:        getenv("BLOB_SIGNED_URL_SECRET", ""),
 		CORSOrigins:            getenv("BLOB_CORS_ORIGINS", "*"),
 		TrustProxy:             getenvBool("BLOB_TRUST_PROXY", false),
 		PublicURL:              getenv("BLOB_PUBLIC_URL", ""),

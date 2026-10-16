@@ -3,7 +3,7 @@ package database
 import (
 	"os"
 
-	"blob/src/functions"
+	"blob/src/lib/logger"
 	"blob/src/models"
 
 	"gorm.io/driver/postgres"
@@ -15,32 +15,32 @@ var DB *gorm.DB
 func Postgres() {
 	dsn := os.Getenv("BLOB_DATABASE_URL")
 	if dsn == "" {
-		functions.Error("[POSTGRES ERROR] BLOB_DATABASE_URL environment variable is not set")
+		logger.Database.Error("BLOB_DATABASE_URL environment variable is not set")
 		os.Exit(1)
 	}
 
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		functions.Error("[POSTGRES ERROR] %v", err)
+		logger.Database.Error("%v", err)
 		return
 	}
 
 	sqlDB, err := DB.DB()
 	if err != nil {
-		functions.Error("[POSTGRES ERROR] %v", err)
+		logger.Database.Error("%v", err)
 		return
 	}
 
 	if err := sqlDB.Ping(); err != nil {
-		functions.Error("[POSTGRES ERROR] %v", err)
+		logger.Database.Error("%v", err)
 		return
 	}
 
-	if err := DB.AutoMigrate(&models.Blob{}, &models.MultipartUpload{}); err != nil {
-		functions.Error("[POSTGRES ERROR] AutoMigrate: %v", err)
+	if err := DB.AutoMigrate(&models.Blob{}, &models.MultipartUpload{}, &models.ApiKey{}, &models.Setting{}); err != nil {
+		logger.Database.Error("AutoMigrate: %v", err)
 		return
 	}
 
-	functions.Info("[POSTGRES] Connected successfully.")
+	logger.Database.Info("Connected successfully.")
 }

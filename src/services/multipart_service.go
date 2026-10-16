@@ -235,15 +235,16 @@ func (s *MultipartService) Status(ctx context.Context, uploadID, userID uuid.UUI
 
 // CompleteInput carries the completion request.
 type CompleteInput struct {
-	UploadID  uuid.UUID
-	UserID    uuid.UUID
-	FinalHash string
+	UploadID      uuid.UUID
+	UserID        uuid.UUID
+	FinalHash     string
+	SkipHashCheck bool
 }
 
 // Complete assembles the chunks, validates the final hash and promotes the
 // session into a regular blob.
 func (s *MultipartService) Complete(ctx context.Context, in CompleteInput) (*models.Blob, error) {
-	if in.FinalHash == "" {
+	if in.FinalHash == "" && !in.SkipHashCheck {
 		return nil, fmt.Errorf("missing X-Final-Hash header")
 	}
 	upload, err := s.repo.GetByID(ctx, in.UploadID)
@@ -294,12 +295,12 @@ func (s *MultipartService) Complete(ctx context.Context, in CompleteInput) (*mod
 	}
 
 	// Validate hash and detect MIME from the assembled file.
-	mime, hash, err := inspectFile(ctx, s.storage, chunkBucket, finalKey)
+	mime, hash, size, err := inspectFile(ctx, s.storage, chunkBucket, finalKey)
 	if err != nil {
 		_ = s.storage.Delete(ctx, chunkBucket, finalKey)
 		return nil, err
 	}
-	if !strings.EqualFold(hash, in.FinalHash) {
+	if !in.SkipHashCheck && !strings.EqualFold(hash, in.FinalHash) {
 		_ = s.storage.Delete(ctx, chunkBucket, finalKey)
 		return nil, fmt.Errorf("final file hash mismatch (integrity check failed)")
 	}
@@ -316,7 +317,7 @@ func (s *MultipartService) Complete(ctx context.Context, in CompleteInput) (*mod
 		Bucket:    upload.Bucket,
 		Filename:  upload.Filename,
 		Mime:      mime,
-		Size:      upload.Size,
+		Size:      size,
 		Hash:      hash,
 		Path:      upload.Bucket + "/" + blobID.String(),
 		CreatedAt: time.Now(),
@@ -346,10 +347,10 @@ func (s *MultipartService) Complete(ctx context.Context, in CompleteInput) (*mod
 
 // inspectFile reads the first 512 bytes for MIME detection and hashes the whole
 // stream, then seeks back to start.
-func inspectFile(ctx context.Context, drv storage.StorageDriver, bucket, key string) (string, string, error) {
+func inspectFile(ctx context.Context, drv storage.StorageDriver, bucket, key string) (string, string, int64, error) {
 	reader, err := drv.Open(ctx, bucket, key)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to open assembled file")
+		return "", "", 0, fmt.Errorf("failed to open assembled file")
 	}
 	defer reader.Close()
 
@@ -357,13 +358,67 @@ func inspectFile(ctx context.Context, drv storage.StorageDriver, bucket, key str
 	n, _ := reader.Read(buf)
 	mime := http.DetectContentType(buf[:n])
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return "", "", fmt.Errorf("failed to seek assembled file")
+		return "", "", 0, fmt.Errorf("failed to seek assembled file")
 	}
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, reader); err != nil {
-		return "", "", fmt.Errorf("failed to hash assembled file")
+	size, err := io.Copy(hasher, reader)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("failed to hash assembled file")
 	}
-	return mime, hex.EncodeToString(hasher.Sum(nil)), nil
+	return mime, hex.EncodeToString(hasher.Sum(nil)), size, nil
+}
+
+// Abort cancels a session and removes its temp chunks.
+func (s *MultipartService) Abort(ctx context.Context, uploadID, userID uuid.UUID) error {
+	upload, err := s.repo.GetByID(ctx, uploadID)
+	if err != nil {
+		return fmt.Errorf("invalid uploadId")
+	}
+	if upload.UserID != userID {
+		return ErrUnauthorized
+	}
+	if upload.Completed {
+		return fmt.Errorf("upload already completed")
+	}
+	_ = s.storage.RemoveTree(ctx, chunkBucket, uploadID.String())
+	return s.repo.Delete(ctx, uploadID)
+}
+
+// PartInfo describes one uploaded part.
+type PartInfo struct {
+	Number int
+	Size   int64
+}
+
+// Parts lists uploaded parts with sizes for an S3 session.
+func (s *MultipartService) Parts(ctx context.Context, uploadID, userID uuid.UUID) ([]PartInfo, error) {
+	upload, err := s.repo.GetByID(ctx, uploadID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uploadId")
+	}
+	if upload.UserID != userID {
+		return nil, ErrUnauthorized
+	}
+	if upload.Completed {
+		return nil, fmt.Errorf("upload already completed")
+	}
+	var indices []int
+	_ = json.Unmarshal(upload.ChunksDone, &indices)
+	sort.Ints(indices)
+	out := make([]PartInfo, 0, len(indices))
+	for _, idx := range indices {
+		size := int64(0)
+		if info, err := s.storage.Stat(ctx, chunkBucket, chunkKey(uploadID, idx)); err == nil {
+			size = info.Size
+		}
+		out = append(out, PartInfo{Number: idx, Size: size})
+	}
+	return out, nil
+}
+
+// FindIncomplete lists unfinished upload sessions.
+func (s *MultipartService) FindIncomplete(ctx context.Context, limit int) ([]models.MultipartUpload, error) {
+	return s.repo.FindIncomplete(ctx, limit)
 }
 
 // CleanupAbandoned removes sessions and temp data older than the cutoff.

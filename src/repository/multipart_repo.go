@@ -49,6 +49,15 @@ func (r *MultipartRepository) MarkCompleted(ctx context.Context, id uuid.UUID) e
 		Update("completed", true).Error
 }
 
+// FindIncomplete returns unfinished upload sessions, newest last.
+func (r *MultipartRepository) FindIncomplete(ctx context.Context, limit int) ([]models.MultipartUpload, error) {
+	var uploads []models.MultipartUpload
+	err := r.db.WithContext(ctx).
+		Where("(completed = ? OR completed IS NULL)", false).
+		Order("created_at ASC").Limit(limit).Find(&uploads).Error
+	return uploads, err
+}
+
 // FindIncompleteOlderThan returns unfinished upload sessions older than cutoff.
 func (r *MultipartRepository) FindIncompleteOlderThan(ctx context.Context, cutoff time.Time) ([]models.MultipartUpload, error) {
 	var uploads []models.MultipartUpload

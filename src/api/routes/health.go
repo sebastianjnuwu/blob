@@ -8,7 +8,7 @@ import (
 
 	"blob/src/config"
 	"blob/src/database"
-	"blob/src/functions"
+	"blob/src/lib/logger"
 )
 
 // HealthHandler handles GET /health, reporting the status of each dependency.
@@ -66,6 +66,6 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 		"status":     status,
 		"components": components,
 	}); err != nil {
-		functions.Error("failed to encode health json: %v", err)
+		logger.Error("failed to encode health json: %v", err)
 	}
 }
