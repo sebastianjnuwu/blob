@@ -59,7 +59,7 @@ func UploadBlobController(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": "Invalid bucket",
 		}); err != nil {
-			functions.Error("failed to encode invalid bucket json: %v", err)
+			logger.Error("failed to encode invalid bucket json: %v", err)
 		}
 		return
 	}
