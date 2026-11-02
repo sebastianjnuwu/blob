@@ -88,8 +88,8 @@ func getenvBool(key string, fallback bool) bool {
 // Load reads environment variables into Env. It is safe to call multiple times.
 func Load() *Config {
 	cfg := &Config{
-		Port:                   getenv("BLOB_PORT", "3000"),
-		Host:                   getenv("BLOB_HOST", "localhost"),
+		Port:                   getenv("PORT", "3000"),
+		Host:                   getenv("HOST", "0.0.0.0"),
 		DatabaseURL:            getenv("BLOB_DATABASE_URL", ""),
 		RedisURL:               getenv("REDIS_URL", ""),
 		StoragePath:            getenv("BLOB_STORAGE_PATH", "storage/uploads"),
