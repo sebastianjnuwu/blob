@@ -243,7 +243,10 @@ func (d *FilesystemDriver) Move(ctx context.Context, srcBucket, srcKey, dstBucke
 
 // EnsureBucket implements StorageDriver.
 func (d *FilesystemDriver) EnsureBucket(ctx context.Context, bucket string) error {
-	path, err := d.resolve(bucket, "")
+	if err := validateRelativePathComponent("bucket", bucket); err != nil {
+		return err
+	}
+	path, err := ensureInside(d.base, filepath.Join(d.base, bucket))
 	if err != nil {
 		return err
 	}

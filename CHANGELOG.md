@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format follows Keep a Changelog principles, organized by date.
 
+## [2026-11-02]
+
+### Fixed
+- A criação do diretório do bucket não valida mais uma chave vazia como caminho de arquivo, corrigindo uploads no driver filesystem.
+
 ## [2026-10-14]
 
 ### Removed
