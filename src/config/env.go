@@ -116,9 +116,10 @@ func Load() *Config {
 
 // ResolveStoragePath returns the base directory where blob data is stored.
 func (c *Config) ResolveStoragePath() string {
-	if c.StoragePath == "" {
+	if c == nil || c.StoragePath == "" {
 		return "storage/uploads"
 	}
+
 	return c.StoragePath
 }
 
