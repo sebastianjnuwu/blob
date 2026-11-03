@@ -9,5 +9,5 @@ RUN go build -o blob main.go
 FROM alpine:latest
 WORKDIR /services
 COPY --from=builder /services/blob /services/blob
-EXPOSE 3000
+
 CMD ["/services/blob"]
