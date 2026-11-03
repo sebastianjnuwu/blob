@@ -94,7 +94,7 @@ jobs:
               --log-driver json-file \
               --log-opt max-size=10m \
               --log-opt max-file=3 \
-              --mount type=volume,source=files-data,target=/services/data/blob/uploads \
+              --mount type=volume,source=files-data,target=/services/data/blob \
               -e BLOB_URL='${{ secrets.BLOB_URL }}' \
               -e BLOB_API_KEY='${{ secrets.BLOB_API_KEY }}' \
               -e PORT='${{ secrets.PORT }}' \
