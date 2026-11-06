@@ -18,7 +18,7 @@ Toda mudança de banco/storage segue expand → migrate → contract, nunca tudo
 
 ## Roadmap (GitHub Projects)
 
-- O roadmap e as tarefas por servico vivem em **GitHub Projects** do repositorio (caBRAPI). Cada service (website, api, edge, blob, mcp, docs) possui colunas por fase (Backlog -> Sprint -> Doing -> Review -> Done) e labels por area (perf, a11y, security, bug, feature).
-- Issues sao vinculadas ao Project do service correspondente; milestones marcam entregas.
-- Fluxo: issue criada -> etiquetada com service + area -> priorizada no Project -> PR fecha a issue via Closes #n -> move para Done apos merge + deploy.
-- Atualize o status no Project ao iniciar/pausar/entregar; nao use docs paralelos como fonte de verdade.
+- The roadmap and tasks per service live in **GitHub Projects** of the repository (caBRAPI). Each service (website, api, edge, blob, mcp, docs) has phase columns (Backlog -> Sprint -> Doing -> Review -> Done) and area labels (perf, a11y, security, bug, feature).
+- Issues are linked to the corresponding service Project; milestones mark deliveries.
+- Flow: issue created -> tagged with service + area -> prioritized in the Project -> PR closes the issue via Closes #n -> moved to Done after merge + deploy.
+- Keep the Project status updated when starting/pausing/delivering; do not use parallel docs as the source of truth.
