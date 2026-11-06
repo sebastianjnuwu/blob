@@ -98,7 +98,7 @@ func Load() *Config {
 		PublicURL:              getenv("BLOB_PUBLIC_URL", ""),
 		RateLimitMax:           getenvInt("BLOB_RATE_LIMIT_MAX", 120),
 		RateLimitWindowMS:      getenvInt("BLOB_RATE_LIMIT_WINDOW_MS", 60000),
-		AllowedMimeTypes:       functions.SplitComma(getenv("BLOB_ALLOWED_MIME_TYPES", "image/png,image/jpeg,image/gif,image/webp")),
+		AllowedMimeTypes:       functions.SplitComma(getenv("BLOB_ALLOWED_MIME_TYPES", "image/png,image/jpeg,image/gif,image/webp,text/html")),
 		MinChunkSize:           getenvInt64("BLOB_MIN_CHUNK_SIZE", 1*1024*1024),
 		MaxChunkSize:           getenvInt64("BLOB_MAX_CHUNK_SIZE", 20*1024*1024),
 		MaxUploadSize:          getenvInt64("BLOB_MAX_UPLOAD_SIZE_BYTES", 100*1024*1024),
