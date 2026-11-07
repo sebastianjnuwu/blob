@@ -1,3 +1,11 @@
-tmp/
-logs/
+.git
+.github
 .env
+.env.*
+node_modules
+dist
+tmp
+logs
+coverage
+*.log
+storage/
