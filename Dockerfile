@@ -1,38 +1,39 @@
 # syntax=docker/dockerfile:1
 
-# Build stage
-FROM golang:1.26-alpine AS builder
+# Build stage: standard Go toolchain.
+FROM golang:1.27 AS builder
 
 WORKDIR /services
 
-# Configure Go toolchain
-ENV GOTOOLCHAIN=local
-
-# Copy dependency manifests first to leverage Docker layer caching
+# Copy and download Go modules.
 COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# Download dependencies using BuildKit cache mount
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
-# Copy the rest of the source code
+# Copy application source.
 COPY . .
 
-# Build a statically linked production binary with compiler cache
+# Build a static, minimal binary.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /blob .
+    CGO_ENABLED=0 go build \
+    -trimpath \
+    -buildvcs=false \
+    -ldflags="-s -w" \
+    -o /blob \
+    .
 
-# Production stage
-FROM alpine:3.21
+# Runtime stage: scratch with CA bundle.
+FROM scratch
+
+# Runtime environment.
+ENV HOST=0.0.0.0 PORT=3000
+
+# Keep a CA bundle for TLS validation (postgres/redis/S3 upstreams).
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /services
 
-# Install CA certificates for HTTPS requests
-RUN apk add --no-cache ca-certificates
+# Copy only the executable.
+COPY --from=builder /blob ./blob
 
-# Copy only the optimized binary
-COPY --from=builder /blob /services/blob
-
-# Start the blob service
-CMD ["/services/blob"]
+CMD ["./blob"]
