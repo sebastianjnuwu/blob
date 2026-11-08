@@ -14,6 +14,6 @@ export BLOB_API_KEY=<api-key>   # from: go run . admin create --label demo --sco
 | `sign.sh`         | `POST /blob/:id/sign` (signed download/view URLs) |
 | `list.sh`         | `GET /blob` (bucket filter + pagination)          |
 | `delete.sh`       | `DELETE /blob/:id`                                |
-| `multipart.sh`    | initiate → chunks (sha256) → complete (use arquivos múltiplos de 1MB; o servidor rejeita chunk < `BLOB_MIN_CHUNK_SIZE`) |
+| `multipart.sh`    | initiate → chunks (sha256) → complete (use multiple 1MB files; the server rejects chunks < `BLOB_MIN_CHUNK_SIZE`) |
 
 Each script prints pretty JSON when `jq` is available.
