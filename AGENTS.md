@@ -15,6 +15,16 @@ Every database/storage change follows expand → migrate → contract, never eve
 - Vet: `go vet ./...`
 - Build: `go build ./...`
 
+## Database Migration Ownership
+
+- The API owns the shared/API PostgreSQL schema and all shared migrations.
+- Blob owns only its own blob/storage schema (models `Blob`, `MultipartUpload`,
+  `ApiKey`, and `Setting`) and runs `AutoMigrate` only for those tables.
+- Blob must never alter, repair, backfill, or migrate the API/shared schema.
+- If a Blob change touches API-owned concepts (for example `StorePage` Blob
+  references), update the API schema and relation contract first, then deploy the
+  supporting Blob change in order.
+
 ## Roadmap (GitHub Projects)
 
 - The roadmap and tasks per service live in **GitHub Projects** of the repository (caBRAPI). Each service (website, api, edge, blob, mcp, docs) has phase columns (Backlog -> Sprint -> Doing -> Review -> Done) and area labels (perf, a11y, security, bug, feature).
