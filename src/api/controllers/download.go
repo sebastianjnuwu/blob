@@ -109,6 +109,14 @@ func serveBlobFile(w http.ResponseWriter, r *http.Request, action auth.Action, d
 	w.Header().Set("Content-Disposition", disposition+`; filename="`+blob.Filename+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(blobFile.Size, 10))
 	w.Header().Set("Accept-Ranges", "bytes")
+	if blob.Hash != "" {
+		w.Header().Set("ETag", `"`+blob.Hash+`"`)
+	}
+	if blob.Public != nil && *blob.Public {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+	}
 
 	http.ServeContent(w, r, blob.Filename, blobFile.ModTime, blobFile.Reader)
 
